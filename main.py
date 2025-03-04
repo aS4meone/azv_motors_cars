@@ -12,28 +12,34 @@ async def send_to_telegram(message):
         await client.post(TELEGRAM_API_URL, json={'chat_id': TG_CHAT_ID, 'text': message})
 
 
-async def handle_data(data):
-    await send_to_telegram(f'\U0001F4E1 Необработанные данные: {data}')
+async def handle_data(data, client_socket):
+    await send_to_telegram(f'📡 Необработанные данные: {data}')
 
     parts = data.split('#')
     if len(parts) < 3:
         return
+
     packet_type = parts[1]
     message = parts[2].strip()
 
-    if packet_type == 'L':  # Пакет логина
+    if packet_type == 'L':  # Логин
         device_id = message.split(';')[0]
-        parsed_data = f'\U0001F50C Устройство {device_id} подключено.'
-    elif packet_type == 'SD':  # Сокращенный пакет с данными
+        parsed_data = f'🔌 Устройство {device_id} подключено.'
+
+        # Отправляем подтверждение авторизации
+        response = "#AL#1\n"
+        client_socket.send(response.encode())
+
+    elif packet_type == 'SD':  # GPS-данные
         fields = message.split(';')
         if len(fields) < 8:
             return
         date, time, lat, lon, speed, course, height, sats = fields[:8]
-        parsed_data = (f'\U0001F4CD GPS Данные:\nДата: {date}\nВремя: {time}\n'
+        parsed_data = (f'📍 GPS Данные:\nДата: {date}\nВремя: {time}\n'
                        f'Широта: {lat}\nДолгота: {lon}\nСкорость: {speed} км/ч\n'
                        f'Курс: {course}\nВысота: {height} м\nСпутники: {sats}')
     else:
-        parsed_data = f'\U00002753 Неизвестный тип пакета: {packet_type}'
+        parsed_data = f'❓ Неизвестный тип пакета: {packet_type}'
 
     await send_to_telegram(parsed_data)
 

@@ -2,17 +2,19 @@ import socket
 import asyncio
 import httpx
 
-TG_BOT_TOKEN = 'your_telegram_token'
-TG_CHAT_ID = 'your_chat_id'
+TG_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'
+TG_CHAT_ID = '965048905'
 TELEGRAM_API_URL = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage'
 
 # Храним активные соединения
 devices = {}
 
+
 async def send_to_telegram(message):
     """Отправка сообщения в Telegram"""
     async with httpx.AsyncClient() as client:
         await client.post(TELEGRAM_API_URL, json={'chat_id': TG_CHAT_ID, 'text': message})
+
 
 async def handle_data(client_socket, addr):
     """Обработчик входящих данных"""
@@ -48,6 +50,7 @@ async def handle_data(client_socket, addr):
             break
     client_socket.close()
 
+
 async def send_to_device(message):
     """Отправка команды на устройство"""
     try:
@@ -64,6 +67,7 @@ async def send_to_device(message):
     except Exception as e:
         await send_to_telegram(f'❌ Ошибка отправки: {e}')
 
+
 async def start_server():
     """Запуск TCP-сервера"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -76,6 +80,7 @@ async def start_server():
         client_socket, addr = await loop.run_in_executor(None, server_socket.accept)
         print(f'Подключено устройство: {addr}')
         asyncio.create_task(handle_data(client_socket, addr))
+
 
 if __name__ == '__main__':
     asyncio.run(start_server())

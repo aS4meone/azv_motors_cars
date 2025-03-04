@@ -10,6 +10,10 @@ TELEGRAM_UPDATES_URL = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/getUpdates'
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 12345
 
+# Сохраняем последний IP устройства
+last_device_ip = None
+last_device_port = None
+
 
 async def send_to_telegram(message):
     """Отправка сообщения в Telegram"""
@@ -18,9 +22,14 @@ async def send_to_telegram(message):
 
 
 async def send_to_device(message):
-    """Отправка текста на устройство"""
+    """Отправка текста на последнее подключенное устройство"""
+    global last_device_ip, last_device_port
+    if not last_device_ip or not last_device_port:
+        await send_to_telegram('❌ Нет активного устройства для отправки.')
+        return
+
     try:
-        with socket.create_connection(('127.0.0.1', SERVER_PORT), timeout=5) as sock:
+        with socket.create_connection((last_device_ip, last_device_port), timeout=5) as sock:
             sock.sendall(message.encode())
             response = sock.recv(1024).decode(errors='ignore')
             await send_to_telegram(f'📡 Ответ от устройства: {response.strip()}')
@@ -30,6 +39,8 @@ async def send_to_device(message):
 
 async def start_server():
     """Запуск TCP-сервера для приема данных с устройства"""
+    global last_device_ip, last_device_port
+
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((SERVER_HOST, SERVER_PORT))
     server_socket.listen(5)
@@ -38,9 +49,13 @@ async def start_server():
     loop = asyncio.get_running_loop()
     while True:
         client_socket, addr = await loop.run_in_executor(None, server_socket.accept)
+        last_device_ip, last_device_port = addr  # Сохраняем IP и порт устройства
         print(f'Подключено устройство: {addr}')
-        raw_data = await loop.run_in_executor(None, client_socket.recv, 1024)
+        await send_to_telegram(f'Подключено устройство: {addr} | {client_socket}')
 
+        await send_to_telegram(f'🔌 Устройство подключено: {addr}')
+
+        raw_data = await loop.run_in_executor(None, client_socket.recv, 1024)
         try:
             data = raw_data.decode('utf-8', errors='ignore').strip()
             if data:

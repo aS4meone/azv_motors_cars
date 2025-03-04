@@ -56,8 +56,12 @@ async def start_server():
         print(f'Подключено устройство: {addr}')
         data = await loop.run_in_executor(None, client_socket.recv, 1024)
         data = data.decode('utf-8')
-        await handle_data(data)
+
+        # Передаем оба аргумента
+        await handle_data(data, client_socket)
+
         client_socket.close()
+
 
 
 if __name__ == '__main__':

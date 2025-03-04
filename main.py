@@ -3,8 +3,8 @@ import httpx
 import asyncio
 import re
 
-TG_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-TG_CHAT_ID = 'YOUR_CHAT_ID'
+TG_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'
+TG_CHAT_ID = '965048905'
 TELEGRAM_API_URL = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage'
 TELEGRAM_UPDATES_URL = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/getUpdates'
 

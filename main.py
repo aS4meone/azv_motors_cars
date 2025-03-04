@@ -54,13 +54,21 @@ async def start_server():
     while True:
         client_socket, addr = await loop.run_in_executor(None, server_socket.accept)
         print(f'Подключено устройство: {addr}')
-        data = await loop.run_in_executor(None, client_socket.recv, 1024)
-        data = data.decode('utf-8')
+        raw_data = await loop.run_in_executor(None, client_socket.recv, 1024)
+
+        try:
+            data = raw_data.decode('utf-8', errors='ignore')  # Игнорируем нераспознаваемые символы
+        except UnicodeDecodeError:
+            print("❌ Ошибка декодирования, пришли бинарные данные!")
+            await send_to_telegram(f"❌ Ошибка декодирования, пришли бинарные данные! {raw_data}")
+            client_socket.close()
+            continue  # Переход к следующему соединению
 
         # Передаем оба аргумента
         await handle_data(data, client_socket)
 
         client_socket.close()
+
 
 
 

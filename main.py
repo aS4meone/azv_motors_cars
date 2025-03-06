@@ -5,9 +5,8 @@ import logging
 # ---------------------------
 # Конфигурация
 # ---------------------------
-
-TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # замените на токен вашего бота
-TELEGRAM_CHAT_ID = 'YOUR_TELEGRAM_CHAT_ID'  # замените на нужный chat_id для уведомлений
+TELEGRAM_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'  # замените на токен вашего бота
+TELEGRAM_CHAT_ID = '965048905' # замените на нужный chat_id для уведомлений
 
 # Словарь для хранения подключённых устройств: device_id -> StreamWriter
 devices = {}

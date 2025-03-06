@@ -7,7 +7,7 @@ import httpx
 # ---------------------------
 
 TELEGRAM_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'  # замените на токен вашего бота
-TELEGRAM_CHAT_ID = '965048905'# замените на нужный chat_id для уведомлений
+TELEGRAM_CHAT_ID = '965048905'  # замените на нужный chat_id для уведомлений
 
 # Словарь для хранения подключённых устройств: device_id -> StreamWriter
 devices = {}
@@ -15,6 +15,7 @@ devices_lock = asyncio.Lock()
 
 # Глобальный httpx клиент для работы с Telegram API
 telegram_client: httpx.AsyncClient = None
+
 
 # ---------------------------
 # Функция отправки сообщения в Telegram
@@ -27,6 +28,7 @@ async def send_telegram_message(text: str):
         await telegram_client.post(url, data=params)
     except Exception as e:
         print(f"Ошибка отправки сообщения в Telegram: {e}")
+
 
 # ---------------------------
 # Обработка соединения от устройства
@@ -55,8 +57,10 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     async with devices_lock:
                         devices[device_id] = writer
                     print(f"[{addr}] Зарегистрировано устройство: {device_id}")
+                    await send_telegram_message("registred device_id", {device_id})
                 else:
                     print(f"[{addr}] Не удалось извлечь device_id из: {message}")
+                    await send_telegram_message(f"[{addr}] Не удалось извлечь device_id из: {message}")
             else:
                 # Любое иное сообщение считаем ответом и пересылаем в Telegram
                 chat_message = f"Ответ от устройства {device_id if device_id else addr}:\n<pre>{message}</pre>"
@@ -72,6 +76,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     del devices[device_id]
         print(f"[{addr}] Соединение закрыто")
 
+
 # ---------------------------
 # Запуск TCP‑сервера для устройств
 # ---------------------------
@@ -82,6 +87,7 @@ async def start_device_server():
     print(f"Сервер устройств запущен на {addr}")
     async with server:
         await server.serve_forever()
+
 
 # ---------------------------
 # Опрос Telegram для получения команд
@@ -126,6 +132,7 @@ async def telegram_polling():
             print(f"Ошибка при опросе Telegram: {e}")
         await asyncio.sleep(1)  # небольшая задержка для предотвращения излишней нагрузки
 
+
 # ---------------------------
 # Основная функция
 # ---------------------------
@@ -140,6 +147,7 @@ async def main():
         )
     finally:
         await telegram_client.aclose()
+
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -48,6 +48,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 break  # соединение закрыто
             message = data.decode('utf-8', errors='ignore').strip()
             print(f"[{addr}] Получено: {message}")
+            await send_telegram_message(f"[{addr}] Получено: {message}")
 
             # Регистрационное сообщение устройства
             if message.startswith("@NTC"):
@@ -75,6 +76,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 if device_id in devices:
                     del devices[device_id]
         print(f"[{addr}] Соединение закрыто")
+        await send_telegram_message(f"[{addr}] Соединение закрыто")
 
 
 # ---------------------------
@@ -85,6 +87,7 @@ async def start_device_server():
     server = await asyncio.start_server(handle_device, '0.0.0.0', 12345)
     addr = server.sockets[0].getsockname()
     print(f"Сервер устройств запущен на {addr}")
+    await send_telegram_message(f"Сервер устройств запущен на {addr}")
     async with server:
         await server.serve_forever()
 

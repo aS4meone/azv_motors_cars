@@ -59,7 +59,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     await send_telegram_message(f"Зарегистрировано устройство: {device_id}")
 
                     # Отправка ответа на handshake
-                    handshake_response = f"@ACK:{device_id}"  # Пример ответа
+                    handshake_response = f"@NTC<S"  # Пример ответа
                     writer.write(handshake_response.encode('utf-8'))
                     await writer.drain()
                     logging.info(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")

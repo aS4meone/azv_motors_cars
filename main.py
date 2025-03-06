@@ -1,110 +1,144 @@
-import socket
-import httpx
+#!/usr/bin/env python3
 import asyncio
-import re
+import httpx
 
-TG_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'
-TG_CHAT_ID = '965048905'
-TELEGRAM_API_URL = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage'
-TELEGRAM_UPDATES_URL = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/getUpdates'
+# ---------------------------
+# Конфигурация
+# ---------------------------
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # замените на токен вашего бота
+TELEGRAM_CHAT_ID = 123456789  # замените на нужный chat_id для уведомлений
 
-SERVER_HOST = '0.0.0.0'
-SERVER_PORT = 12345
-
-# Словарь для хранения IP и порта каждого устройства по их IMEI
+# Словарь для хранения подключённых устройств: device_id -> StreamWriter
 devices = {}
+devices_lock = asyncio.Lock()
 
+# Глобальный httpx клиент для работы с Telegram API
+telegram_client: httpx.AsyncClient = None
 
-async def send_to_telegram(message: str) -> None:
-    """Отправка сообщения в Telegram"""
-    async with httpx.AsyncClient() as client:
-        await client.post(TELEGRAM_API_URL, json={'chat_id': TG_CHAT_ID, 'text': message})
-
-
-async def send_to_device(imei: str, message: str) -> None:
-    """Отправка текста на устройство по его IMEI"""
-    device_info = devices.get(imei)
-    if not device_info:
-        await send_to_telegram(f'❌ Устройство с IMEI {imei} не найдено.')
-        return
-
-    device_ip, device_port = device_info
+# ---------------------------
+# Функция отправки сообщения в Telegram
+# ---------------------------
+async def send_telegram_message(text: str):
+    """Отправляет сообщение в Telegram через Bot API."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    params = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
     try:
-        with socket.create_connection((device_ip, device_port), timeout=5) as sock:
-            sock.sendall(message.encode())
-            response = sock.recv(1024).decode(errors='ignore')
-            await send_to_telegram(f'📡 Ответ от устройства {imei}: {response.strip()}')
+        await telegram_client.post(url, data=params)
     except Exception as e:
-        await send_to_telegram(f'❌ Ошибка отправки на устройство {imei}: {e}')
+        print(f"Ошибка отправки сообщения в Telegram: {e}")
 
-
-async def start_server() -> None:
-    """Запуск TCP-сервера для приема данных с устройств"""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((SERVER_HOST, SERVER_PORT))
-    server_socket.listen(5)
-    print('Сервер запущен и ожидает подключения...')
-
-    loop = asyncio.get_running_loop()
-    while True:
-        client_socket, addr = await loop.run_in_executor(None, server_socket.accept)
-        print(f'Подключено устройство: {addr}')
-
-        raw_data = await loop.run_in_executor(None, client_socket.recv, 1024)
-        try:
-            data = raw_data.decode('utf-8', errors='ignore').strip()
-            if data.startswith('@NTC'):
-                match = re.search(r'NE\*>S:(\d+)', data)
-                if match:
-                    imei = match.group(1)
-                    devices[imei] = addr  # Сохраняем IP и порт устройства по его IMEI
-                    await send_to_telegram(f'✅ Устройство {imei} зарегистрировано!')
-                    ack_message = '@NTC OK'
-                    client_socket.sendall(ack_message.encode())
-                    await send_to_telegram(f'📤 Подтверждение отправлено: {ack_message}')
-                else:
-                    await send_to_telegram(f'❌ Не удалось извлечь IMEI из сообщения: {data}')
-            else:
-                await send_to_telegram(f'📡 Данные от {addr}: {data}')
-        except UnicodeDecodeError:
-            await send_to_telegram(f"❌ Ошибка декодирования: {raw_data}")
-
-        client_socket.close()
-
-
-async def listen_telegram() -> None:
-    """Мониторинг Telegram на новые сообщения"""
-    last_update_id = None
-    async with httpx.AsyncClient() as client:
+# ---------------------------
+# Обработка соединения от устройства
+# ---------------------------
+async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    """
+    Обрабатывает подключение устройства:
+      - При получении регистрационного сообщения (начинается с "@NTC") извлекает device_id
+      - Все последующие данные от устройства пересылаются в Telegram
+    """
+    addr = writer.get_extra_info('peername')
+    device_id = None
+    try:
         while True:
-            try:
-                params = {'offset': last_update_id + 1} if last_update_id else {}
-                response = await client.get(TELEGRAM_UPDATES_URL, params=params)
-                updates = response.json()
+            data = await reader.read(1024)
+            if not data:
+                break  # соединение закрыто
+            message = data.decode('utf-8', errors='ignore').strip()
+            print(f"[{addr}] Получено: {message}")
 
-                for update in updates.get("result", []):
-                    last_update_id = update["update_id"]
-                    message = update.get("message", {}).get("text", "").strip()
+            # Регистрационное сообщение устройства
+            if message.startswith("@NTC"):
+                if ':' in message:
+                    parts = message.split(':', 1)
+                    device_id = parts[1].strip()
+                    async with devices_lock:
+                        devices[device_id] = writer
+                    print(f"[{addr}] Зарегистрировано устройство: {device_id}")
+                else:
+                    print(f"[{addr}] Не удалось извлечь device_id из: {message}")
+            else:
+                # Любое иное сообщение считаем ответом и пересылаем в Telegram
+                chat_message = f"Ответ от устройства {device_id if device_id else addr}:\n<pre>{message}</pre>"
+                await send_telegram_message(chat_message)
+    except Exception as e:
+        print(f"[{addr}] Ошибка: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        if device_id:
+            async with devices_lock:
+                if device_id in devices:
+                    del devices[device_id]
+        print(f"[{addr}] Соединение закрыто")
 
-                    if message:
-                        # Ожидается, что сообщение будет в формате "IMEI: команда"
-                        if ':' in message:
-                            imei, command = map(str.strip, message.split(':', 1))
-                            await send_to_telegram(f'📤 Отправка на устройство {imei}: {command}')
-                            await send_to_device(imei, command)
-                        else:
-                            await send_to_telegram('❌ Неверный формат сообщения. Используйте "IMEI: команда".')
+# ---------------------------
+# Запуск TCP‑сервера для устройств
+# ---------------------------
+async def start_device_server():
+    """Запускает асинхронный TCP‑сервер на порту 12345."""
+    server = await asyncio.start_server(handle_device, '0.0.0.0', 12345)
+    addr = server.sockets[0].getsockname()
+    print(f"Сервер устройств запущен на {addr}")
+    async with server:
+        await server.serve_forever()
 
-            except Exception as e:
-                print(f"Ошибка получения сообщений: {e}")
+# ---------------------------
+# Опрос Telegram для получения команд
+# ---------------------------
+async def telegram_polling():
+    """
+    Осуществляет long polling Telegram API методом getUpdates.
+    При получении команды /send <device_id> <команда> ищет устройство и отправляет команду.
+    """
+    offset = 0
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    while True:
+        params = {"timeout": 30, "offset": offset}
+        try:
+            response = await telegram_client.get(url, params=params)
+            data = response.json()
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
+                message = update.get("message", {})
+                text = message.get("text", "")
+                # Обработка команды /send
+                if text.startswith("/send"):
+                    parts = text.split(maxsplit=2)
+                    if len(parts) < 3:
+                        await send_telegram_message("Использование: /send <device_id> <команда>")
+                        continue
+                    device_id = parts[1].strip()
+                    command = parts[2].strip()
+                    async with devices_lock:
+                        writer = devices.get(device_id)
+                    if writer is None:
+                        await send_telegram_message(f"Устройство {device_id} не подключено.")
+                    else:
+                        try:
+                            writer.write(command.encode('utf-8'))
+                            await writer.drain()
+                            await send_telegram_message(f"Команда отправлена устройству {device_id}.")
+                            print(f"Отправлена команда '{command}' устройству {device_id}")
+                        except Exception as e:
+                            await send_telegram_message(f"Ошибка при отправке команды: {e}")
+        except Exception as e:
+            print(f"Ошибка при опросе Telegram: {e}")
+        await asyncio.sleep(1)  # небольшая задержка для предотвращения излишней нагрузки
 
-            await asyncio.sleep(3)
-
-
-async def main() -> None:
-    """Запуск сервера и слушателя Telegram"""
-    await asyncio.gather(start_server(), listen_telegram())
-
+# ---------------------------
+# Основная функция
+# ---------------------------
+async def main():
+    global telegram_client
+    # Инициализируем глобальный httpx клиент с длительным timeout для поддержания постоянного соединения
+    telegram_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+    try:
+        await asyncio.gather(
+            start_device_server(),
+            telegram_polling(),
+        )
+    finally:
+        await telegram_client.aclose()
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -6,7 +6,7 @@ import logging
 # Конфигурация
 # ---------------------------
 TELEGRAM_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'  # замените на токен вашего бота
-TELEGRAM_CHAT_ID = '965048905' # замените на нужный chat_id для уведомлений
+TELEGRAM_CHAT_ID = '965048905'  # замените на нужный chat_id для уведомлений
 
 # Словарь для хранения подключённых устройств: device_id -> StreamWriter
 devices = {}
@@ -14,6 +14,9 @@ devices_lock = asyncio.Lock()
 
 # Глобальный httpx клиент для работы с Telegram API
 telegram_client: httpx.AsyncClient = None
+
+# Настраиваемый ответ на handshake
+handshake_response = "@NTC NE*<S"  # Значение по умолчанию
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -58,8 +61,8 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     logging.info(f"[{addr}] Зарегистрировано устройство: {device_id}")
                     await send_telegram_message(f"Зарегистрировано устройство: {device_id}")
 
-                    # Отправка ответа на handshake
-                    handshake_response = f"@NTC*<S"  # Пример ответа
+                    # Отправка ответа на handshake с использованием текущего значения handshake_response
+                    global handshake_response
                     writer.write(handshake_response.encode('utf-8'))
                     await writer.drain()
                     logging.info(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")
@@ -92,6 +95,7 @@ async def start_device_server():
     addr = server.sockets[0].getsockname()
     logging.info(f"Сервер устройств запущен на {addr}")
     await send_telegram_message(f"Сервер устройств запущен на {addr}")
+    await send_telegram_message(f"Текущий handshake_response: '{handshake_response}'")
     async with server:
         await server.serve_forever()
 
@@ -103,6 +107,7 @@ async def telegram_polling():
     """
     Осуществляет long polling Telegram API методом getUpdates.
     При получении команды /send <device_id> <команда> ищет устройство и отправляет команду.
+    При получении команды /set_handshake <новый_ответ> изменяет handshake_response.
     """
     offset = 0
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -115,6 +120,7 @@ async def telegram_polling():
                 offset = update["update_id"] + 1
                 message = update.get("message", {})
                 text = message.get("text", "")
+
                 # Обработка команды /send
                 if text.startswith("/send"):
                     parts = text.split(maxsplit=2)
@@ -135,6 +141,31 @@ async def telegram_polling():
                             logging.info(f"Отправлена команда '{command}' устройству {device_id}")
                         except Exception as e:
                             await send_telegram_message(f"Ошибка при отправке команды: {e}")
+
+                # Обработка команды /set_handshake
+                elif text.startswith("/set_handshake"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) < 2:
+                        await send_telegram_message("Использование: /set_handshake <новый_ответ>")
+                        continue
+                    global handshake_response
+                    handshake_response = parts[1].strip()
+                    await send_telegram_message(f"Установлен новый handshake_response: '{handshake_response}'")
+                    logging.info(f"Установлен новый handshake_response: '{handshake_response}'")
+
+                # Обработка команды /get_handshake
+                elif text.startswith("/get_handshake"):
+                    await send_telegram_message(f"Текущий handshake_response: '{handshake_response}'")
+
+                # Обработка команды /help
+                elif text.startswith("/help"):
+                    help_text = """Доступные команды:
+/send <device_id> <команда> - отправить команду устройству
+/set_handshake <новый_ответ> - изменить ответ на handshake
+/get_handshake - показать текущий ответ на handshake
+/help - показать эту справку"""
+                    await send_telegram_message(help_text)
+
         except Exception as e:
             logging.error(f"Ошибка при опросе Telegram: {e}")
         await asyncio.sleep(1)  # небольшая задержка для предотвращения излишней нагрузки

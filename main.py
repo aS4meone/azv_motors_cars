@@ -1,13 +1,13 @@
-#!/usr/bin/env python3
 import asyncio
 import httpx
+import logging
 
 # ---------------------------
 # Конфигурация
 # ---------------------------
 
-TELEGRAM_BOT_TOKEN = '7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY'  # замените на токен вашего бота
-TELEGRAM_CHAT_ID = '965048905' # замените на нужный chat_id для уведомлений
+TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # замените на токен вашего бота
+TELEGRAM_CHAT_ID = 'YOUR_TELEGRAM_CHAT_ID'  # замените на нужный chat_id для уведомлений
 
 # Словарь для хранения подключённых устройств: device_id -> StreamWriter
 devices = {}
@@ -15,6 +15,9 @@ devices_lock = asyncio.Lock()
 
 # Глобальный httpx клиент для работы с Telegram API
 telegram_client: httpx.AsyncClient = None
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 # ---------------------------
@@ -27,18 +30,13 @@ async def send_telegram_message(text: str):
     try:
         await telegram_client.post(url, data=params)
     except Exception as e:
-        print(f"Ошибка отправки сообщения в Telegram: {e}")
+        logging.error(f"Ошибка отправки сообщения в Telegram: {e}")
 
 
 # ---------------------------
 # Обработка соединения от устройства
 # ---------------------------
 async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """
-    Обрабатывает подключение устройства:
-      - При получении регистрационного сообщения (начинается с "@NTC") извлекает device_id
-      - Все последующие данные от устройства пересылаются в Telegram
-    """
     addr = writer.get_extra_info('peername')
     device_id = None
     try:
@@ -47,27 +45,34 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             if not data:
                 break  # соединение закрыто
             message = data.decode('utf-8', errors='ignore').strip()
-            print(f"[{addr}] Получено: {message}")
+            logging.info(f"[{addr}] Получено: {message}")
             await send_telegram_message(f"[{addr}] Получено: {message}")
 
-            # Регистрационное сообщение устройства
+            # Проверка на handshake сообщение
             if message.startswith("@NTC"):
+                # Извлечение device_id из сообщения
                 if ':' in message:
                     parts = message.split(':', 1)
                     device_id = parts[1].strip()
                     async with devices_lock:
                         devices[device_id] = writer
-                    print(f"[{addr}] Зарегистрировано устройство: {device_id}")
-                    await send_telegram_message("registred device_id", {device_id})
+                    logging.info(f"[{addr}] Зарегистрировано устройство: {device_id}")
+                    await send_telegram_message(f"Зарегистрировано устройство: {device_id}")
+
+                    # Отправка ответа на handshake
+                    handshake_response = f"@ACK:{device_id}"  # Пример ответа
+                    writer.write(handshake_response.encode('utf-8'))
+                    await writer.drain()
+                    logging.info(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")
                 else:
-                    print(f"[{addr}] Не удалось извлечь device_id из: {message}")
+                    logging.warning(f"[{addr}] Не удалось извлечь device_id из: {message}")
                     await send_telegram_message(f"[{addr}] Не удалось извлечь device_id из: {message}")
             else:
-                # Любое иное сообщение считаем ответом и пересылаем в Telegram
+                # Обработка других сообщений
                 chat_message = f"Ответ от устройства {device_id if device_id else addr}:\n<pre>{message}</pre>"
                 await send_telegram_message(chat_message)
     except Exception as e:
-        print(f"[{addr}] Ошибка: {e}")
+        logging.error(f"[{addr}] Ошибка: {e}")
     finally:
         writer.close()
         await writer.wait_closed()
@@ -75,7 +80,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             async with devices_lock:
                 if device_id in devices:
                     del devices[device_id]
-        print(f"[{addr}] Соединение закрыто")
+        logging.info(f"[{addr}] Соединение закрыто")
         await send_telegram_message(f"[{addr}] Соединение закрыто")
 
 
@@ -86,7 +91,7 @@ async def start_device_server():
     """Запускает асинхронный TCP‑сервер на порту 12345."""
     server = await asyncio.start_server(handle_device, '0.0.0.0', 12345)
     addr = server.sockets[0].getsockname()
-    print(f"Сервер устройств запущен на {addr}")
+    logging.info(f"Сервер устройств запущен на {addr}")
     await send_telegram_message(f"Сервер устройств запущен на {addr}")
     async with server:
         await server.serve_forever()
@@ -128,11 +133,11 @@ async def telegram_polling():
                             writer.write(command.encode('utf-8'))
                             await writer.drain()
                             await send_telegram_message(f"Команда отправлена устройству {device_id}.")
-                            print(f"Отправлена команда '{command}' устройству {device_id}")
+                            logging.info(f"Отправлена команда '{command}' устройству {device_id}")
                         except Exception as e:
                             await send_telegram_message(f"Ошибка при отправке команды: {e}")
         except Exception as e:
-            print(f"Ошибка при опросе Telegram: {e}")
+            logging.error(f"Ошибка при опросе Telegram: {e}")
         await asyncio.sleep(1)  # небольшая задержка для предотвращения излишней нагрузки
 
 

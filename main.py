@@ -16,7 +16,8 @@ devices_lock = asyncio.Lock()
 telegram_client: httpx.AsyncClient = None
 
 # Настраиваемый ответ на handshake
-handshake_response = "@NTC NE*<S"  # Значение по умолчанию
+handshake_response = "404e544300000000010000000300455e2a3c53"  # Значение по умолчанию
+flex_response = "404E544300000000010000000900B01E1E"  # Ответ на FLEX сообщение
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -55,31 +56,48 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             await send_telegram_message(f"[{addr}] Получено: {message}")
             await send_telegram_message(f"[{addr}] HEX: {hex_message}")
 
-            # Проверка на handshake сообщение
-            if message.startswith("@NTC"):
-                # Извлечение device_id из сообщения
-                if ':' in message:
-                    parts = message.split(':', 1)
-                    device_id = parts[1].strip()
-                    async with devices_lock:
-                        devices[device_id] = writer
-                    logging.info(f"[{addr}] Зарегистрировано устройство: {device_id}")
-                    await send_telegram_message(f"Зарегистрировано устройство: {device_id}")
+            # Проверка на FLEX сообщение
+            if "@NTC" in message and "FLEX" in message:
+                global flex_response
+                # Удалить все пробелы из строки flex_response
+                clean_flex_response = flex_response.replace(" ", "")
+                # Отправить ответ на FLEX сообщение
+                writer.write(bytes.fromhex(clean_flex_response))
+                await writer.drain()
+                logging.info(f"[{addr}] Отправлен ответ на FLEX: {flex_response}")
+                await send_telegram_message(f"[{addr}] Отправлен ответ на FLEX: {flex_response}")
 
-                    # Отправка ответа на handshake с использованием текущего значения handshake_response
-                    global handshake_response
-                    writer.write(bytes.fromhex(handshake_response))
-                    await writer.drain()
-                    logging.info(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")
-                else:
-                    logging.warning(f"[{addr}] Не удалось извлечь device_id из: {message}")
-                    await send_telegram_message(f"[{addr}] Не удалось извлечь device_id из: {message}")
+            # Проверка на handshake сообщение с device_id
+            elif message.startswith("@NTC") and ":" in message:
+                # Извлечение device_id из сообщения
+                parts = message.split(':', 1)
+                device_id = parts[1].strip()
+                async with devices_lock:
+                    devices[device_id] = writer
+                logging.info(f"[{addr}] Зарегистрировано устройство: {device_id}")
+                await send_telegram_message(f"Зарегистрировано устройство: {device_id}")
+
+                # Отправка ответа на handshake с использованием текущего значения handshake_response
+                global handshake_response
+                writer.write(bytes.fromhex(handshake_response))
+                await writer.drain()
+                logging.info(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")
+                await send_telegram_message(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")
+
+            elif message.startswith("@NTC"):
+                # Обработка других @NTC сообщений без device_id
+                logging.warning(f"[{addr}] Получено @NTC сообщение без device_id: {message}")
+                await send_telegram_message(f"[{addr}] Получено @NTC сообщение без device_id: {message}")
+
+                # Можно добавить дополнительную логику для других типов @NTC сообщений здесь
+
             else:
                 # Обработка других сообщений
                 chat_message = f"Ответ от устройства {device_id if device_id else addr}:\n<pre>{message}</pre>"
                 await send_telegram_message(chat_message)
     except Exception as e:
         logging.error(f"[{addr}] Ошибка: {e}")
+        await send_telegram_message(f"[{addr}] Ошибка: {str(e)}")
     finally:
         writer.close()
         await writer.wait_closed()
@@ -101,6 +119,7 @@ async def start_device_server():
     logging.info(f"Сервер устройств запущен на {addr}")
     await send_telegram_message(f"Сервер устройств запущен на {addr}")
     await send_telegram_message(f"Текущий handshake_response: '{handshake_response}'")
+    await send_telegram_message(f"Текущий flex_response: '{flex_response}'")
     async with server:
         await server.serve_forever()
 
@@ -113,6 +132,7 @@ async def telegram_polling():
     Осуществляет long polling Telegram API методом getUpdates.
     При получении команды /send <device_id> <команда> ищет устройство и отправляет команду.
     При получении команды /set_handshake <новый_ответ> изменяет handshake_response.
+    При получении команды /set_flex <новый_ответ> изменяет flex_response.
     """
     offset = 0
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -158,9 +178,24 @@ async def telegram_polling():
                     await send_telegram_message(f"Установлен новый handshake_response: '{handshake_response}'")
                     logging.info(f"Установлен новый handshake_response: '{handshake_response}'")
 
+                # Обработка команды /set_flex
+                elif text.startswith("/set_flex"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) < 2:
+                        await send_telegram_message("Использование: /set_flex <новый_ответ>")
+                        continue
+                    global flex_response
+                    flex_response = parts[1].strip()
+                    await send_telegram_message(f"Установлен новый flex_response: '{flex_response}'")
+                    logging.info(f"Установлен новый flex_response: '{flex_response}'")
+
                 # Обработка команды /get_handshake
                 elif text.startswith("/get_handshake"):
                     await send_telegram_message(f"Текущий handshake_response: '{handshake_response}'")
+
+                # Обработка команды /get_flex
+                elif text.startswith("/get_flex"):
+                    await send_telegram_message(f"Текущий flex_response: '{flex_response}'")
 
                 # Обработка команды /help
                 elif text.startswith("/help"):
@@ -168,6 +203,8 @@ async def telegram_polling():
 /send <device_id> <команда> - отправить команду устройству
 /set_handshake <новый_ответ> - изменить ответ на handshake
 /get_handshake - показать текущий ответ на handshake
+/set_flex <новый_ответ> - изменить ответ на FLEX сообщение
+/get_flex - показать текущий ответ на FLEX
 /help - показать эту справку"""
                     await send_telegram_message(help_text)
 

@@ -68,7 +68,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
                     # Отправка ответа на handshake с использованием текущего значения handshake_response
                     global handshake_response
-                    writer.write(handshake_response.encode('utf-8'))
+                    writer.write(bytes.fromhex(handshake_response))
                     await writer.drain()
                     logging.info(f"[{addr}] Отправлен ответ на handshake: {handshake_response}")
                 else:

@@ -18,6 +18,8 @@ telegram_client: httpx.AsyncClient = None
 # Настраиваемый ответ на handshake
 handshake_response = "404e544300000000010000000300455e2a3c53"  # Значение по умолчанию
 flex_response = "404E544300000000010000000900B01E1E"  # Ответ на FLEX сообщение
+# Настраиваемый ответ на телеметрию
+telemetry_response = "7e41028c"  # Ответ на телеметрию
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -56,8 +58,19 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             await send_telegram_message(f"[{addr}] Получено: {message}")
             await send_telegram_message(f"[{addr}] HEX: {hex_message}")
 
+            # Проверка на телеметрию (начинается с ~A)
+            if message.startswith("~A"):
+                global telemetry_response
+                # Удалить все пробелы из строки telemetry_response
+                clean_telemetry_response = telemetry_response.replace(" ", "")
+                # Отправить ответ на телеметрию
+                writer.write(bytes.fromhex(clean_telemetry_response))
+                await writer.drain()
+                logging.info(f"[{addr}] Отправлен ответ на телеметрию: {telemetry_response}")
+                await send_telegram_message(f"[{addr}] Отправлен ответ на телеметрию: {telemetry_response}")
+
             # Проверка на FLEX сообщение
-            if "@NTC" in message and "FLEX" in message:
+            elif "@NTC" in message and "FLEX" in message:
                 global flex_response
                 # Удалить все пробелы из строки flex_response
                 clean_flex_response = flex_response.replace(" ", "")
@@ -120,6 +133,7 @@ async def start_device_server():
     await send_telegram_message(f"Сервер устройств запущен на {addr}")
     await send_telegram_message(f"Текущий handshake_response: '{handshake_response}'")
     await send_telegram_message(f"Текущий flex_response: '{flex_response}'")
+    await send_telegram_message(f"Текущий telemetry_response: '{telemetry_response}'")
     async with server:
         await server.serve_forever()
 
@@ -133,6 +147,7 @@ async def telegram_polling():
     При получении команды /send <device_id> <команда> ищет устройство и отправляет команду.
     При получении команды /set_handshake <новый_ответ> изменяет handshake_response.
     При получении команды /set_flex <новый_ответ> изменяет flex_response.
+    При получении команды /set_telemetry <новый_ответ> изменяет telemetry_response.
     """
     offset = 0
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -189,6 +204,17 @@ async def telegram_polling():
                     await send_telegram_message(f"Установлен новый flex_response: '{flex_response}'")
                     logging.info(f"Установлен новый flex_response: '{flex_response}'")
 
+                # Обработка команды /set_telemetry
+                elif text.startswith("/set_telemetry"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) < 2:
+                        await send_telegram_message("Использование: /set_telemetry <новый_ответ>")
+                        continue
+                    global telemetry_response
+                    telemetry_response = parts[1].strip()
+                    await send_telegram_message(f"Установлен новый telemetry_response: '{telemetry_response}'")
+                    logging.info(f"Установлен новый telemetry_response: '{telemetry_response}'")
+
                 # Обработка команды /get_handshake
                 elif text.startswith("/get_handshake"):
                     await send_telegram_message(f"Текущий handshake_response: '{handshake_response}'")
@@ -196,6 +222,10 @@ async def telegram_polling():
                 # Обработка команды /get_flex
                 elif text.startswith("/get_flex"):
                     await send_telegram_message(f"Текущий flex_response: '{flex_response}'")
+
+                # Обработка команды /get_telemetry
+                elif text.startswith("/get_telemetry"):
+                    await send_telegram_message(f"Текущий telemetry_response: '{telemetry_response}'")
 
                 # Обработка команды /help
                 elif text.startswith("/help"):
@@ -205,6 +235,8 @@ async def telegram_polling():
 /get_handshake - показать текущий ответ на handshake
 /set_flex <новый_ответ> - изменить ответ на FLEX сообщение
 /get_flex - показать текущий ответ на FLEX
+/set_telemetry <новый_ответ> - изменить ответ на телеметрию
+/get_telemetry - показать текущий ответ на телеметрию
 /help - показать эту справку"""
                     await send_telegram_message(help_text)
 

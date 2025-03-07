@@ -44,6 +44,7 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     try:
         while True:
             data = await reader.read(1024)
+            logging.info(f"[{addr}] Raw bytes: {data}")
             if not data:
                 break  # соединение закрыто
             message = data.decode('utf-8', errors='ignore').strip()

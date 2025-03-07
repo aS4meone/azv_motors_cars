@@ -52,10 +52,8 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 break  # соединение закрыто
             message = data.decode('utf-8', errors='ignore').strip()
             hex_message = data.hex().upper()
-            logging.info(f"[{addr}] Получено: {message}")
             logging.info(f"[{addr}] HEX: {hex_message}")
 
-            await send_telegram_message(f"[{addr}] Получено: {message}")
             await send_telegram_message(f"[{addr}] HEX: {hex_message}")
 
             # Проверка на телеметрию (начинается с ~A)
@@ -99,7 +97,6 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
             elif message.startswith("@NTC"):
                 # Обработка других @NTC сообщений без device_id
-                logging.warning(f"[{addr}] Получено @NTC сообщение без device_id: {message}")
                 await send_telegram_message(f"[{addr}] Получено @NTC сообщение без device_id: {message}")
 
                 # Можно добавить дополнительную логику для других типов @NTC сообщений здесь

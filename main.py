@@ -47,8 +47,12 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             if not data:
                 break  # соединение закрыто
             message = data.decode('utf-8', errors='ignore').strip()
+            hex_message = data.hex().upper()
             logging.info(f"[{addr}] Получено: {message}")
+            logging.info(f"[{addr}] HEX: {hex_message}")
+
             await send_telegram_message(f"[{addr}] Получено: {message}")
+            await send_telegram_message(f"[{addr}] HEX: {hex_message}")
 
             # Проверка на handshake сообщение
             if message.startswith("@NTC"):

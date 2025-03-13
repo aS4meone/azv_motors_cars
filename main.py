@@ -17,9 +17,9 @@ telegram_client: httpx.AsyncClient = None
 
 # Настраиваемый ответ на handshake
 handshake_response = "404e544300000000010000000300455e2a3c53"  # Значение по умолчанию
-flex_response = "404E544300000000010000000900B01E1E"  # Ответ на FLEX сообщение
+flex_response = "404E544300000000010000000900B1A02A3C464C4558B01E1E"  # Ответ на FLEX сообщение
 # Настраиваемый ответ на телеметрию
-telemetry_response = "7e41028c"  # Ответ на телеметрию
+telemetry_response = "7e410857"  # Ответ на телеметрию
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -38,6 +38,9 @@ async def send_telegram_message(text: str):
         logging.error(f"Ошибка отправки сообщения в Telegram: {e}")
 
 
+# ---------------------------
+# Обработка соединения от устройства
+# ---------------------------
 # ---------------------------
 # Обработка соединения от устройства
 # ---------------------------
@@ -66,6 +69,16 @@ async def handle_device(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 await writer.drain()
                 logging.info(f"[{addr}] Отправлен ответ на телеметрию: {telemetry_response}")
                 await send_telegram_message(f"[{addr}] Отправлен ответ на телеметрию: {telemetry_response}")
+
+            # Проверка на сообщения, начинающиеся с ~C
+            elif message.startswith("~C"):
+                # Используем тот же ответ, что и для телеметрии
+                clean_telemetry_response = telemetry_response.replace(" ", "")
+                # Отправить ответ
+                writer.write(bytes.fromhex(clean_telemetry_response))
+                await writer.drain()
+                logging.info(f"[{addr}] Отправлен ответ на ~C сообщение: {telemetry_response}")
+                await send_telegram_message(f"[{addr}] Отправлен ответ на ~C сообщение: {telemetry_response}")
 
             # Проверка на FLEX сообщение
             elif "@NTC" in message and "FLEX" in message:

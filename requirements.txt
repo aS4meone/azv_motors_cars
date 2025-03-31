@@ -1,1 +1,9 @@
 httpx~=0.28.1
+python-dotenv~=1.1.0
+SQLAlchemy~=2.0.39
+fastapi~=0.115.12
+pydantic~=2.10.6
+APScheduler~=3.11.0
+starlette~=0.46.1
+alembic~=1.15.1
+uvicorn

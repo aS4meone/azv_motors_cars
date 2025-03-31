@@ -7,3 +7,4 @@ APScheduler~=3.11.0
 starlette~=0.46.1
 alembic~=1.15.1
 uvicorn
+gunicorn

@@ -54,6 +54,10 @@ async def update_token():
 
 
 async def update_vehicles():
+    # Если ещё нет токена (например, при первом запуске), обновляем его
+    if not token:
+        await update_token()
+
     db: Session = SessionLocal()
     try:
         vehicles = db.query(Vehicle).all()

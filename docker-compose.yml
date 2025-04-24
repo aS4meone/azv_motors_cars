@@ -8,7 +8,11 @@ services:
       - .env
     depends_on:
       - db
-    command: /bin/sh -c "gunicorn -w 3 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8666 main:app"
+    command: /bin/sh -c "uvicorn main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./avatars:/app/avatars
+      - ./uploads/orders:/app/uploads/orders
+
 
   db:
     image: postgres:latest
@@ -19,6 +23,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
 
 volumes:
   postgres_data:

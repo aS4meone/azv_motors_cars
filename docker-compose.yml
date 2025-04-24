@@ -12,7 +12,6 @@ services:
     volumes:
       - ./avatars:/app/avatars
       - ./uploads/orders:/app/uploads/orders
-    network_mode: host
 
 
 

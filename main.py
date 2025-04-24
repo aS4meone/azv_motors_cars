@@ -1,8 +1,11 @@
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI, HTTPException, Path, Query
 from starlette.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -21,6 +24,11 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 token: str = None
+
+
+def run_migrations():
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
 
 
 def parse_numeric(value: str) -> float:
@@ -156,6 +164,7 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup():
+    run_migrations()
     # Инициализация машин
     ensure_initial_vehicles()
 

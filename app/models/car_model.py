@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
 from app.dependencies.database.database import Base
@@ -8,8 +7,10 @@ from app.dependencies.database.database import Base
 class Vehicle(Base):
     __tablename__ = 'vehicles'
 
-    vehicle_id = Column(Integer, primary_key=True, autoincrement=True)
+    vehicle_id = Column(Integer, primary_key=True, autoincrement=False)
     vehicle_imei = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)  # новое поле
+
     longitude = Column(Float, nullable=True)
     latitude = Column(Float, nullable=True)
     altitude = Column(Float, nullable=True)
@@ -26,4 +27,7 @@ class Vehicle(Base):
     engine_hours = Column(Float, default=0.0)
 
     def __repr__(self):
-        return f"<Vehicle(vehicle_id={self.vehicle_id}, vehicle_imei={self.vehicle_imei}, speed={self.speed})>"
+        return (
+            f"<Vehicle(id={self.vehicle_id}, name='{self.name}', "
+            f"imei={self.vehicle_imei}, speed={self.speed})>"
+        )

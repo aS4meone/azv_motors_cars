@@ -1,6 +1,8 @@
 import asyncio
+from httpx import AsyncClient
+import logging
 
-import httpx
+logger = logging.getLogger(__name__)
 
 
 class RateLimitedHTTPClient:
@@ -8,8 +10,7 @@ class RateLimitedHTTPClient:
 
     def __init__(self):
         self.queue = asyncio.Queue()
-        self.client = httpx.AsyncClient()
-        # Запуск фонового воркера, который обрабатывает запросы из очереди
+        self.client = AsyncClient()
         self._worker_task = asyncio.create_task(self._worker())
 
     @classmethod
@@ -21,40 +22,34 @@ class RateLimitedHTTPClient:
     async def _worker(self):
         while True:
             task = await self.queue.get()
-            method = task["method"]
-            url = task["url"]
-            kwargs = task["kwargs"]
-            future = task["future"]
+            method, url, kwargs, future = (
+                task["method"], task["url"], task["kwargs"], task["future"]
+            )
 
-            # Ждем 1 секунду между запросами
-            await asyncio.sleep(1)
-            while True:
+            await asyncio.sleep(1)  # минимальный интервал запросов
+            max_retries = 5
+            for attempt in range(max_retries):
                 try:
                     response = await self.client.request(method, url, **kwargs)
                     if response.status_code == 429:
-                        # Если сервер вернул 429, ждём 2 секунды и пробуем снова
-                        await asyncio.sleep(2)
+                        backoff = min(2 ** (attempt + 1), 60)
+                        logger.warning(f"429 received, retrying in {backoff}s (attempt {attempt + 1})")
+                        await asyncio.sleep(backoff)
                         continue
-                    # Если запрос успешен (или пришёл другой код), возвращаем ответ
                     future.set_result(response)
                     break
                 except Exception as e:
+                    if attempt < max_retries - 1:
+                        backoff = min(2 ** (attempt + 1), 60)
+                        await asyncio.sleep(backoff)
+                        continue
                     future.set_exception(e)
-                    break
-
             self.queue.task_done()
 
     async def send_request(self, method: str, url: str, **kwargs):
-        """
-        Отправляет HTTP запрос с заданным методом, url и дополнительными параметрами.
-        Возвращает httpx.Response.
-        """
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         await self.queue.put({
-            "method": method,
-            "url": url,
-            "kwargs": kwargs,
-            "future": future
+            "method": method, "url": url, "kwargs": kwargs, "future": future
         })
         return await future

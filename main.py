@@ -1,43 +1,37 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta
-from fastapi import FastAPI, Path, Query, HTTPException
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-import httpx
+from datetime import datetime
 
-from app.dependencies.database.database import SessionLocal, get_db
+from fastapi import FastAPI, HTTPException, Path, Query
+from starlette.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy.orm import Session
+
+from app.dependencies.database.database import SessionLocal
 from app.glonassoft_api.glonass_auth import get_auth_token
 from app.glonassoft_api.history_car import fetch_gps_coordinates_async
 from app.glonassoft_api.last_car_data import get_vehicle_data, get_last_vehicles_data
 from app.models.car_model import Vehicle
-from app.core.config import POLYGON_COORDS  # Предполагается, что вы добавите
 from app.router import router
+from app.alerts import process_vehicle_notifications
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-TELEGRAM_BOT_TOKEN = "7649836420:AAHJkjRAlMOe2NWqK_UIkYXlFBx07BCFXlY"
-TARGET_CHAT_ID = 965048905
-
-# Глобальные переменные
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 token: str = None
-token_last_update: datetime = None
-alert_cache: dict[str, datetime] = {}
 
 
-def parse_numeric_value(value: str) -> float:
+def parse_numeric(value: str) -> float:
     if not value:
         return 0.0
-    value = value.replace(",", ".")
-    match = re.search(r'[-+]?\d*\.?\d+', value)
-    return float(match.group()) if match else 0.0
+    m = re.search(r'[-+]?\d*\.?\d+', value.replace(",", "."))
+    return float(m.group()) if m else 0.0
 
 
-def parse_int_value(value: str) -> int:
-    return int(parse_numeric_value(value))
+def parse_int(value: str) -> int:
+    return int(parse_numeric(value))
 
 
 def parse_datetime(dt_str: str) -> datetime:
@@ -46,225 +40,146 @@ def parse_datetime(dt_str: str) -> datetime:
     return datetime.fromisoformat(dt_str)
 
 
-def extract_from_items(items: list, key_name: str) -> str:
+def extract_from_items(items: list[dict], key_name: str) -> str:
     for item in items:
         if item.get("name", "").lower() == key_name.lower():
             return item.get("value", "").strip()
     return ""
 
 
-def is_point_inside_polygon(lat: float, lon: float, polygon_coords: list) -> bool:
-    num_vertices = len(polygon_coords)
-    inside = False
-    x, y = lon, lat
-    j = num_vertices - 1
-    for i in range(num_vertices):
-        xi, yi = polygon_coords[i]
-        xj, yj = polygon_coords[j]
-        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-            inside = not inside
-        j = i
-    return inside
-
-
-def clean_alert_cache() -> None:
-    now = datetime.utcnow()
-    keys_to_remove = [k for k, ts in alert_cache.items() if now - ts > timedelta(minutes=5)]
-    for k in keys_to_remove:
-        del alert_cache[k]
-
-
-def should_send_alert(vehicle_imei: str, alert_type: str) -> bool:
-    clean_alert_cache()
-    key = f"vehicle:{vehicle_imei}:{alert_type}"
-    if key in alert_cache:
-        return False
-    alert_cache[key] = datetime.utcnow()
-    return True
-
-
-async def send_telegram_message(message: str) -> None:
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TARGET_CHAT_ID, "text": message}
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            logger.info("Telegram-уведомление отправлено.")
-    except Exception as e:
-        logger.error(f"Не удалось отправить Telegram-сообщение: {e}")
-
-
-async def process_vehicle_notifications(data: dict) -> None:
-    alerts = []
-    imei = data.get("imei", "неизвестно")
-
-    def maybe_alert(condition: bool, alert_type: str, message: str):
-        if condition and should_send_alert(imei, alert_type):
-            alerts.append(message)
-
-    speed = None
-    for group in ["GeneralSensors", "RegistredSensors"]:
-        speed_str = extract_from_items(data.get(group, []), "Скорость")
-        if speed_str:
-            speed = parse_numeric_value(speed_str)
-            break
-    maybe_alert(speed is not None and speed >= 100, "overspeed", f"⚠️ Превышение скорости: {speed} км/ч")
-
-    rpm = parse_int_value(extract_from_items(data.get("RegistredSensors", []), "Обороты двигателя"))
-    maybe_alert(rpm >= 4000, "rpm_high", f"⚠️ Высокие обороты двигателя: {rpm} об/мин")
-
-    temp_str = extract_from_items(data.get("RegistredSensors", []), "Температура двигателя")
-    if temp_str and "данных нет" not in temp_str.lower():
-        temp = parse_numeric_value(temp_str)
-        maybe_alert(temp >= 100, "temp_high", f"⚠️ Высокая температура двигателя: {temp}°C")
-
-    hood_str = extract_from_items(data.get("RegistredSensors", []), "Капот")
-    maybe_alert(hood_str and "открыт" in hood_str.lower(), "hood_open", "⚠️ Капот открыт!")
-
-    overload = any("accel_sh" in s.get("name", "").lower() and "true" in s.get("value", "").lower()
-                   for s in data.get("UnregisteredSensors", []))
-    maybe_alert(overload, "overload", "⚠️ Резкое ускорение/торможение!")
-
-    lat = data.get("latitude")
-    lon = data.get("longitude")
-    out_of_bounds = lat and lon and not is_point_inside_polygon(lat, lon, POLYGON_COORDS)
-    maybe_alert(out_of_bounds, "zone_exit", f"⚠️ Выход за зону! Координаты: {lat}, {lon}")
-
-    if alerts:
-        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        header = f"🚗 Внимание ({imei}) — {ts}\n\n"
-        await send_telegram_message(header + "\n".join(alerts))
-
-
-async def update_token() -> None:
-    global token, token_last_update
-    logger.info("Обновление токена...")
+async def update_token():
+    global token
     token = await get_auth_token("https://regions.glonasssoft.ru", "%CLIENT", "12345678")
-    token_last_update = datetime.utcnow()
-    logger.info(f"Токен обновлён: {token}")
+    logger.info("Token updated")
 
 
-async def update_vehicles(current_token: str) -> None:
+async def update_vehicles():
     db: Session = SessionLocal()
-    notification_tasks = []
     try:
         vehicles = db.query(Vehicle).all()
-        vehicle_ids = [v.vehicle_id for v in vehicles]
-        logger.info(f"Обновление данных для {len(vehicles)} автомобилей")
+        notifications = []
+        ids = [v.vehicle_id for v in vehicles]
 
-        for vehicle in vehicles:
-            logger.info(f"Получение данных для автомобиля: {vehicle.vehicle_imei}")
-            data = await get_vehicle_data(current_token, vehicle.vehicle_imei)
+        for v in vehicles:
+            try:
+                data = await get_vehicle_data(token, v.vehicle_imei)
+                v.last_update_sensors = parse_datetime(data.get("lastactivetime", ""))
 
-            vehicle.last_update_sensors = parse_datetime(data.get("lastactivetime"))
-            package_items = data.get("PackageItems", [])
-            vehicle.longitude = parse_numeric_value(extract_from_items(package_items, "Долгота"))
-            vehicle.latitude = parse_numeric_value(extract_from_items(package_items, "Широта"))
-            vehicle.altitude = parse_numeric_value(extract_from_items(package_items, "Высота над уровнем моря"))
-            vehicle.course = parse_numeric_value(extract_from_items(package_items, "Курс"))
-            vehicle.speed = parse_numeric_value(extract_from_items(package_items, "Скорость"))
-            vehicle.engine_hours = parse_numeric_value(extract_from_items(package_items, "engine_hours"))
+                pkg = data.get("PackageItems", [])
+                regs = data.get("RegistredSensors", [])
+                unregs = data.get("UnregisteredSensors", [])
 
-            registered = data.get("RegistredSensors", [])
-            vehicle.mileage = parse_numeric_value(extract_from_items(registered, "Датчик пробега (CAN-шина[5])"))
-            vehicle.rpm = parse_int_value(extract_from_items(registered, "Обороты двигателя (CAN-шина[3])"))
-            engine_temp_str = extract_from_items(registered, "Температура двигателя (CAN-шина[4])")
-            vehicle.is_engine_on = engine_temp_str.lower() != "данных нет"
-            vehicle.engine_temperature = parse_numeric_value(engine_temp_str) if vehicle.is_engine_on else None
-            hood_state = extract_from_items(registered, "Капот (Дискретный[0])").lower()
-            vehicle.is_hood_open = hood_state != "закрыт"
-            vehicle.fuel_level = parse_numeric_value(extract_from_items(registered, "Уровень топлива (CAN-шина[1])"))
+                # Гео/скорость
+                v.latitude = parse_numeric(extract_from_items(pkg, "Широта"))
+                v.longitude = parse_numeric(extract_from_items(pkg, "Долгота"))
+                v.altitude = parse_numeric(extract_from_items(pkg, "Высота над уровнем моря"))
+                v.course = parse_numeric(extract_from_items(pkg, "Курс"))
+                v.speed = parse_numeric(extract_from_items(pkg, "Скорость"))
+                v.engine_hours = parse_numeric(extract_from_items(pkg, "engine_hours"))
 
-            notification_tasks.append(asyncio.create_task(process_vehicle_notifications(data)))
+                # Пробег
+                v.mileage = parse_numeric(extract_from_items(regs, "Датчик пробега (CAN-шина[5])"))
 
-        last_data = await get_last_vehicles_data(current_token, vehicle_ids)
-        for item in last_data:
-            veh_id = item.get("vehicleId")
-            record_time = parse_datetime(item.get("recordTime"))
-            for vehicle in vehicles:
-                if vehicle.vehicle_id == veh_id:
-                    vehicle.longitude = float(item.get("longitude", 0))
-                    vehicle.latitude = float(item.get("latitude", 0))
-                    vehicle.last_update_coordinates = record_time
+                # RPM и состояние двигателя
+                v.rpm = parse_int(extract_from_items(regs, "Обороты двигателя (CAN-шина[3])"))
+                v.is_engine_on = v.rpm >= 1
+
+                # Температура
+                temp = extract_from_items(regs, "Температура двигателя (CAN-шина[4])")
+                v.engine_temperature = parse_numeric(temp) if temp and temp.lower() != "данных нет" else None
+
+                # Капот
+                hood = extract_from_items(unregs, "CanSafetyFlags_hood")
+                v.is_hood_open = hood.lower() == "true"
+
+                # Топливо
+                v.fuel_level = parse_numeric(extract_from_items(regs, "Уровень топлива (CAN-шина[1])"))
+
+                notifications.append(asyncio.create_task(
+                    process_vehicle_notifications(data, v)
+                ))
+            except Exception as e:
+                logger.error(f"Failed to update vehicle {v.vehicle_imei}: {e}")
+
+        # Обновление координат батчем
+        try:
+            batch = await get_last_vehicles_data(token, ids)
+            if batch:
+                for item in batch:
+                    rec = parse_datetime(item.get("recordTime", ""))
+                    for v in vehicles:
+                        if v.vehicle_id == item.get("vehicleId"):
+                            v.last_update_coordinates = rec
+                            break
+        except Exception as e:
+            logger.error(f"Batch update failed: {e}")
 
         db.commit()
-        logger.info("Данные автомобилей успешно обновлены")
-
-        if notification_tasks:
-            await asyncio.gather(*notification_tasks)
-
+        if notifications:
+            await asyncio.gather(*notifications)
     except Exception as e:
         db.rollback()
-        logger.error(f"Ошибка при обновлении данных: {e}")
+        logger.error(f"Error updating vehicles: {e}")
     finally:
         db.close()
 
 
-async def scheduled_job() -> None:
-    await update_vehicles(token)
-
-
-async def continuous_vehicle_update() -> None:
+async def continuous_update():
     while True:
-        await scheduled_job()
-        logger.info("Обновление завершено, запускаем снова.")
+        await update_vehicles()
 
 
-scheduler = AsyncIOScheduler()
+def ensure_initial_vehicles():
+    db = SessionLocal()
+    try:
+        defaults = [
+            {"vehicle_id": 800212421, "vehicle_imei": "866011056074131", "name": "MB CLA45s"},
+            {"vehicle_id": 800153076, "vehicle_imei": "866011056063951", "name": "Haval F7x"},
+        ]
+        for d in defaults:
+            if not db.query(Vehicle).filter_by(vehicle_imei=d["vehicle_imei"]).first():
+                db.add(Vehicle(**d))
+        db.commit()
+        logger.info(f"Initial vehicles updated")
+    finally:
+        db.close()
+
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
 )
-
 app.include_router(router)
 
 
 @app.on_event("startup")
-async def startup_event() -> None:
+async def startup():
+    # Инициализация машин
+    ensure_initial_vehicles()
+
+    # Токен и непрерывное обновление
     await update_token()
-    app.state.vehicle_update_task = asyncio.create_task(continuous_vehicle_update())
+    asyncio.create_task(continuous_update())
+
+    # Планировщик только для токена
+    scheduler = AsyncIOScheduler()
     scheduler.add_job(update_token, 'interval', minutes=25)
     scheduler.start()
-    logger.info("Сервер запущен и шедулер активен.")
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    scheduler.shutdown()
-    task = app.state.vehicle_update_task
-    task.cancel()
-    logger.info("Сервер остановлен, шедулер остановлен.")
 
 
 @app.get("/")
-def root() -> dict:
-    return {"message": "Сервер работает"}
+def root():
+    return {"message": "OK"}
 
 
-@app.get("/vehicles/{device_id}/gps", status_code=200)
-async def get_gps_data(
-        device_id: str = Path(..., description="Device ID of the vehicle"),
-        start_date: str = Query(..., description="Start date in format YYYY-MM-DDThh:mm:ss"),
-        end_date: str = Query(..., description="End date in format YYYY-MM-DDThh:mm:ss"),
-):
+@app.get("/vehicles/{device_id}/gps")
+async def get_gps(device_id: str = Path(...), start_date: str = Query(...), end_date: str = Query(...)):
     try:
-        db = next(get_db())
-        vehicle = db.query(Vehicle).filter(Vehicle.vehicle_id == device_id).first()
-        if not vehicle:
-            raise HTTPException(status_code=404, detail="Vehicle not found in database")
-
-        print(token)
-        result = await fetch_gps_coordinates_async(device_id, start_date, end_date, token)
-
-        if not result:
-            raise HTTPException(status_code=404, detail="No GPS data found for the specified period")
-
-        return result
+        data = await fetch_gps_coordinates_async(device_id, start_date, end_date, token)
+        if not data:
+            raise HTTPException(status_code=404, detail="No GPS data")
+        return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch GPS data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

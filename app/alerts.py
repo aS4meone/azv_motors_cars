@@ -57,6 +57,7 @@ def should_alert(imei: str, alert_type: str) -> bool:
     alert_cache[key] = datetime.utcnow()
     return True
 
+
 async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     imei = vehicle.vehicle_imei
     name = vehicle.name
@@ -91,8 +92,9 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     maybe(hood_open, "hood_open", f"{name}: Капот открыт")
 
     # — Резкое ускорение/торможение из UnregisteredSensors —
+    # ищем в value и по accel_shX
     overload = any(
-        "accel_sh" in item.get("name", "").lower() and item.get("value", "").lower() == "true"
+        "accel_sh" in item.get("value", "").lower() and "true" in item.get("value", "").lower()
         for item in unregs
     )
     maybe(overload, "overload", f"{name}: Резкое ускорение/торможение")

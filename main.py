@@ -68,44 +68,55 @@ async def update_vehicles():
             try:
                 data = await get_vehicle_data(token, v.vehicle_imei)
                 v.last_update_sensors = parse_datetime(data.get("lastactivetime", ""))
-
                 pkg = data.get("PackageItems", [])
                 regs = data.get("RegistredSensors", [])
                 unregs = data.get("UnregisteredSensors", [])
 
-                # Гео/скорость
+                # — Гео —
                 v.latitude = parse_numeric(extract_from_items(pkg, "Широта"))
                 v.longitude = parse_numeric(extract_from_items(pkg, "Долгота"))
                 v.altitude = parse_numeric(extract_from_items(pkg, "Высота над уровнем моря"))
                 v.course = parse_numeric(extract_from_items(pkg, "Курс"))
-                v.speed = parse_numeric(extract_from_items(pkg, "Скорость"))
-                v.engine_hours = parse_numeric(extract_from_items(pkg, "engine_hours"))
 
-                # Пробег
+                # — Скорость (PackageItems) с отладкой —
+                raw_speed = extract_from_items(pkg, "Скорость")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] raw_speed (PackageItems): {raw_speed!r}")
+                try:
+                    v.speed = parse_numeric(raw_speed)
+                except Exception as e:
+                    logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse speed {raw_speed!r}: {e}")
+                    v.speed = None
+                logger.debug(f"[Vehicle {v.vehicle_imei}] parsed v.speed = {v.speed}")
+
+                # — Пробег (CAN-шина[5]) —
                 v.mileage = parse_numeric(extract_from_items(regs, "Датчик пробега (CAN-шина[5])"))
 
-                # RPM и состояние двигателя
+                # — RPM и состояние двигателя —
                 v.rpm = parse_int(extract_from_items(regs, "Обороты двигателя (CAN-шина[3])"))
                 v.is_engine_on = v.rpm >= 1
 
-                # Температура
+                # — Температура двигателя —
                 temp = extract_from_items(regs, "Температура двигателя (CAN-шина[4])")
                 v.engine_temperature = parse_numeric(temp) if temp and temp.lower() != "данных нет" else None
 
-                # Капот
-                hood = extract_from_items(unregs, "CanSafetyFlags_hood")
-                v.is_hood_open = hood.lower() == "true"
+                # — Капот (RegisteredSensors) с отладкой —
+                raw_hood = extract_from_items(regs, "Капот (Дискретный[0])")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] raw_hood status (RegisteredSensors): {raw_hood!r}")
+                v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # Топливо
+                # — Уровень топлива (CAN-шина[1]) —
                 v.fuel_level = parse_numeric(extract_from_items(regs, "Уровень топлива (CAN-шина[1])"))
 
+                # — Создаём уведомление по данным машины —
                 notifications.append(asyncio.create_task(
                     process_vehicle_notifications(data, v)
                 ))
+
             except Exception as e:
                 logger.error(f"Failed to update vehicle {v.vehicle_imei}: {e}")
 
-        # Обновление координат батчем
+        # — Обновление координат батчем —
         try:
             batch = await get_last_vehicles_data(token, ids)
             if batch:
@@ -121,9 +132,11 @@ async def update_vehicles():
         db.commit()
         if notifications:
             await asyncio.gather(*notifications)
+
     except Exception as e:
         db.rollback()
         logger.error(f"Error updating vehicles: {e}")
+
     finally:
         db.close()
 

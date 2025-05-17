@@ -20,13 +20,12 @@ async def get_last_vehicles_data(token: str, ids: List[int]) -> Union[dict, None
 
 
 async def get_vehicle_data(token: str, vehicle_imei: int) -> Union[dict, None]:
-    """ Получает данные о конкретном транспортном средстве и сохраняет в файл. """
+    """ Получает данные о конкретном транспортном средстве, сохраняет их в файл и возвращает как dict. """
     url = f"https://regions.glonasssoft.ru/api/v2.0/monitoringVehicles/devicestatebyimei?imei={vehicle_imei}&timezone=5"
     headers = {"X-Auth": token, "Content-Type": "application/json"}
 
     client = RateLimitedHTTPClient.get_instance()
     response = await client.send_request("GET", url, headers=headers)
-
     if response.status_code == 200:
         data = response.json()
         return data

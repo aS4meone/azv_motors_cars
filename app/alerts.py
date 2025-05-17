@@ -57,7 +57,6 @@ def should_alert(imei: str, alert_type: str) -> bool:
     alert_cache[key] = datetime.utcnow()
     return True
 
-
 async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     imei = vehicle.vehicle_imei
     name = vehicle.name
@@ -67,39 +66,44 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
         if cond and should_alert(imei, atype):
             alerts.append(msg)
 
+    pkg = data.get("PackageItems", [])
     regs = data.get("RegistredSensors", [])
     unregs = data.get("UnregisteredSensors", [])
 
-    # Скорость
-    speed = parse_numeric(extract_from_items(regs, "Скорость"))
+    # — Скорость из PackageItems —
+    raw_speed = extract_from_items(pkg, "Скорость")
+    speed = parse_numeric(raw_speed)
     maybe(speed >= 100, "overspeed", f"{name}: Превышение скорости {speed} км/ч")
 
-    # Обороты
-    rpm = parse_int(extract_from_items(regs, "Обороты двигателя"))
+    # — Обороты двигателя из RegisteredSensors —
+    raw_rpm = extract_from_items(regs, "Обороты двигателя (CAN-шина[3])")
+    rpm = parse_int(raw_rpm)
     maybe(rpm >= 4000, "rpm_high", f"{name}: Высокие обороты двигателя {rpm}")
 
-    # Температура
-    temp = parse_numeric(extract_from_items(regs, "Температура двигателя"))
+    # — Температура двигателя из RegisteredSensors —
+    raw_temp = extract_from_items(regs, "Температура двигателя (CAN-шина[4])")
+    temp = parse_numeric(raw_temp)
     maybe(temp >= 100, "temp_high", f"{name}: Температура двигателя {temp}°C")
 
-    # Капот по CAN-флагу
-    hood_flag = extract_from_items(unregs, "CanSafetyFlags_hood")
-    maybe(hood_flag.lower() == "true", "hood_open", f"{name}: Капот открыт")
+    # — Капот из RegisteredSensors —
+    raw_hood = extract_from_items(regs, "Капот (Дискретный[0])")
+    hood_open = raw_hood.lower() == "открыт"
+    maybe(hood_open, "hood_open", f"{name}: Капот открыт")
 
-    # Резкое ускорение/торможение
+    # — Резкое ускорение/торможение из UnregisteredSensors —
     overload = any(
-        "accel_sh" in item.get("name", "").lower() and "true" in item.get("value", "").lower()
+        "accel_sh" in item.get("name", "").lower() and item.get("value", "").lower() == "true"
         for item in unregs
     )
     maybe(overload, "overload", f"{name}: Резкое ускорение/торможение")
 
-    # Выход за зону
-    pkg = data.get("PackageItems", [])
+    # — Выход за зону по GPS —
     lat = parse_numeric(extract_from_items(pkg, "Широта"))
     lon = parse_numeric(extract_from_items(pkg, "Долгота"))
     if lat and lon and not is_point_inside_polygon(lat, lon, POLYGON_COORDS):
         maybe(True, "zone_exit", f"{name}: Выход за зону ({lat}, {lon})")
 
+    # — Отправка Telegram, если есть алерты —
     if alerts:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         header = f"🚗 Уведомления для {name}:"

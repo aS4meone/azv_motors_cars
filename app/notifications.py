@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 async def send_telegram_message(text: str) -> None:
-    print("421412")
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     async with httpx.AsyncClient() as client:
         for chat_id in TELEGRAM_CHAT_IDS:

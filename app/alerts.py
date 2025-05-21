@@ -91,12 +91,20 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     hood_open = raw_hood.lower() == "открыт"
     maybe(hood_open, "hood_open", f"{name}: Капот открыт")
 
-    # — Резкое ускорение/торможение из UnregisteredSensors —
-    # ищем в value и по accel_shX
+    # — Резкое ускорение/торможение: только Accel_SH2–4, SH1 игнорируем —
     overload = any(
-        "accel_sh" in item.get("value", "").lower() and "true" in item.get("value", "").lower()
+        (
+                ("accel_sh2" in val or "accel_sh3" in val or "accel_sh4" in val)
+                and "true" in val
+        )
         for item in unregs
+        for val in [item.get("value", "").lower()]
     )
+    dbg = [
+        item.get("value")
+        for item in unregs
+        if any(flag in item.get("value", "").lower() for flag in ["accel_sh2", "accel_sh3", "accel_sh4"])
+    ]
     maybe(overload, "overload", f"{name}: Резкое ускорение/торможение")
 
     # — Выход за зону по GPS —

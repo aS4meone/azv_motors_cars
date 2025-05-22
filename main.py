@@ -105,8 +105,14 @@ async def update_vehicles():
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива (CAN-шина[1]) —
-                v.fuel_level = parse_numeric(extract_from_items(regs, "Уровень топлива (CAN-шина[1])"))
+                # — Уровень топлива (CAN-шина[1]) — обновляем только если двигатель заведён —
+                if v.is_engine_on:
+                    raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
+                    try:
+                        v.fuel_level = parse_numeric(raw_fuel)
+                    except Exception as e:
+                        logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {raw_fuel!r}: {e}")
+                        # оставляем предыдущий уровень топлива
 
                 # — Создаём уведомление по данным машины —
                 notifications.append(asyncio.create_task(

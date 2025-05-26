@@ -94,7 +94,7 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     # — Резкое ускорение/торможение: только Accel_SH2–4, SH1 игнорируем —
     overload = any(
         (
-                ("accel_sh2" in val or "accel_sh3" in val or "accel_sh4" in val)
+                ("accel_sh3" in val or "accel_sh4" in val)
                 and "true" in val
         )
         for item in unregs

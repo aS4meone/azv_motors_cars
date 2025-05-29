@@ -67,6 +67,14 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
         if cond and should_alert(imei, atype):
             alerts.append(msg)
 
+    # Маппинг описаний для accel-датчиков
+    sensor_map = {
+        "Accel_SH1": "слабый удар",
+        "Accel_SH2": "сильный удар",
+        "Accel_SH3": "перемещение",
+        "Accel_SH4": "наклон",
+    }
+
     pkg = data.get("PackageItems", [])
     regs = data.get("RegistredSensors", [])
     unregs = data.get("UnregisteredSensors", [])
@@ -91,21 +99,21 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     hood_open = raw_hood.lower() == "открыт"
     maybe(hood_open, "hood_open", f"{name}: Капот открыт")
 
-    # — Резкое ускорение/торможение: только Accel_SH2–4, SH1 игнорируем —
-    overload = any(
-        (
-                ("accel_sh3" in val or "accel_sh4" in val)
-                and "true" in val
-        )
-        for item in unregs
-        for val in [item.get("value", "").lower()]
-    )
-    dbg = [
-        item.get("value")
-        for item in unregs
-        if any(flag in item.get("value", "").lower() for flag in ["accel_sh2", "accel_sh3", "accel_sh4"])
-    ]
-    maybe(overload, "overload", f"{name}: Резкое ускорение/торможение")
+    # — Accel_SH1–4 и Accel_WAKEUP —
+    for item in unregs:
+        raw_val = item.get("value", "")
+        val_lower = raw_val.lower()
+        # ищем 'true' и имя датчика в скобках
+        if val_lower.startswith("true") and "(" in raw_val and ")" in raw_val:
+            m = re.search(r"\(([^)]+)\)", raw_val)
+            if not m:
+                continue
+            sensor = m.group(1)  # e.g. "Accel_SH2"
+            if sensor in sensor_map:
+                desc = sensor_map[sensor]
+                maybe(True,
+                      sensor.lower(),
+                      f"{name}: {sensor} ({desc})")
 
     # — Выход за зону по GPS —
     lat = parse_numeric(extract_from_items(pkg, "Широта"))

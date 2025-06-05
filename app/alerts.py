@@ -84,6 +84,12 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     speed = parse_numeric(raw_speed)
     maybe(speed >= 100, "overspeed", f"{name}: Превышение скорости {speed} км/ч")
 
+    # — Ручник (handbrake) и движение —
+    raw_handbrake = extract_from_items(pkg, "CanSafetyFlags_handbrake")
+    is_handbrake_on = raw_handbrake.lower() == "true"
+    if is_handbrake_on and speed > 0:
+        maybe(True, "handbrake_drift", f"{name}: Ручник включён при движении {speed} км/ч (возможно дрифт)")
+
     # — Обороты двигателя из RegisteredSensors —
     raw_rpm = extract_from_items(regs, "Обороты двигателя (CAN-шина[3])")
     rpm = parse_int(raw_rpm)

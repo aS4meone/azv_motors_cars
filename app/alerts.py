@@ -1,6 +1,5 @@
-import re
-import asyncio
 from datetime import datetime, timedelta
+import re
 from typing import List, Dict, Tuple
 
 from app.core.config import POLYGON_COORDS
@@ -67,7 +66,21 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
         if cond and should_alert(imei, atype):
             alerts.append(msg)
 
-    # Маппинг описаний для accel-датчиков
+    # — 1) Проверка потери связи дольше 5 минут —
+    last_active_str = data.get("lastactivetime", "")
+    try:
+        last_active_dt = datetime.fromisoformat(last_active_str.replace("Z", "+00:00"))
+    except Exception:
+        last_active_dt = None
+
+    if last_active_dt and datetime.utcnow() - last_active_dt > timedelta(minutes=5):
+        maybe(
+            True,
+            "offline",
+            f"{name}: Нет связи более 5 минут (последнее обновление {last_active_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
+        )
+
+    # — 2) Обычные сенсорные алерты —
     sensor_map = {
         "Accel_SH1": "слабый удар",
         "Accel_SH2": "сильный удар",
@@ -79,55 +92,52 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     regs = data.get("RegistredSensors", [])
     unregs = data.get("UnregisteredSensors", [])
 
-    # — Скорость из PackageItems —
+    # Скорость
     raw_speed = extract_from_items(pkg, "Скорость")
     speed = parse_numeric(raw_speed)
     maybe(speed >= 100, "overspeed", f"{name}: Превышение скорости {speed} км/ч")
 
-    # — Ручник (handbrake) и движение —
+    # Ручник при движении
     raw_handbrake = extract_from_items(pkg, "CanSafetyFlags_handbrake")
     is_handbrake_on = raw_handbrake.lower() == "true"
     if is_handbrake_on and speed > 0:
         maybe(True, "handbrake_drift", f"{name}: Ручник включён при движении {speed} км/ч (возможно дрифт)")
 
-    # — Обороты двигателя из RegisteredSensors —
+    # RPM
     raw_rpm = extract_from_items(regs, "Обороты двигателя (CAN-шина[3])")
     rpm = parse_int(raw_rpm)
     maybe(rpm >= 4000, "rpm_high", f"{name}: Высокие обороты двигателя {rpm}")
 
-    # — Температура двигателя из RegisteredSensors —
+    # Температура двигателя
     raw_temp = extract_from_items(regs, "Температура двигателя (CAN-шина[4])")
     temp = parse_numeric(raw_temp)
     maybe(temp >= 100, "temp_high", f"{name}: Температура двигателя {temp}°C")
 
-    # — Капот из RegisteredSensors —
+    # Капот
     raw_hood = extract_from_items(regs, "Капот (Дискретный[0])")
     hood_open = raw_hood.lower() == "открыт"
     maybe(hood_open, "hood_open", f"{name}: Капот открыт")
 
-    # — Accel_SH1–4 и Accel_WAKEUP —
+    # Accel-сенсоры
     for item in unregs:
         raw_val = item.get("value", "")
         val_lower = raw_val.lower()
-        # ищем 'true' и имя датчика в скобках
         if val_lower.startswith("true") and "(" in raw_val and ")" in raw_val:
             m = re.search(r"\(([^)]+)\)", raw_val)
             if not m:
                 continue
-            sensor = m.group(1)  # e.g. "Accel_SH2"
+            sensor = m.group(1)
             if sensor in sensor_map:
                 desc = sensor_map[sensor]
-                maybe(True,
-                      sensor.lower(),
-                      f"{name}: {sensor} ({desc})")
+                maybe(True, sensor.lower(), f"{name}: {sensor} ({desc})")
 
-    # — Выход за зону по GPS —
+    # Выход за зону
     lat = parse_numeric(extract_from_items(pkg, "Широта"))
     lon = parse_numeric(extract_from_items(pkg, "Долгота"))
     if lat and lon and not is_point_inside_polygon(lat, lon, POLYGON_COORDS):
         maybe(True, "zone_exit", f"{name}: Выход за зону ({lat}, {lon})")
 
-    # — Отправка Telegram, если есть алерты —
+    # — 3) Отправка в Telegram, если есть алерты —
     if alerts:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         header = f"🚗 Уведомления для {name}:"

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 from typing import List, Dict, Tuple
 
@@ -73,7 +73,7 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
     except Exception:
         last_active_dt = None
 
-    if last_active_dt and datetime.utcnow() - last_active_dt > timedelta(minutes=5):
+    if last_active_dt and datetime.now(timezone.utc) - last_active_dt > timedelta(minutes=5):
         maybe(
             True,
             "offline",

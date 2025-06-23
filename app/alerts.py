@@ -66,18 +66,18 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
         if cond and should_alert(imei, atype):
             alerts.append(msg)
 
-    # — 1) Проверка потери связи дольше 5 минут —
+    # — 1) Проверка потери связи дольше 11 минут —
     last_active_str = data.get("lastactivetime", "")
     try:
         last_active_dt = datetime.fromisoformat(last_active_str.replace("Z", "+00:00"))
     except Exception:
         last_active_dt = None
 
-    if last_active_dt and datetime.now(timezone.utc) - last_active_dt > timedelta(minutes=10):
+    if last_active_dt and datetime.now(timezone.utc) - last_active_dt > timedelta(minutes=11):
         maybe(
             True,
             "offline",
-            f"{name}: Нет связи более 10 минут (последнее обновление {last_active_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
+            f"{name}: Нет связи более 11 минут (последнее обновление {last_active_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
         )
 
     # — 2) Обычные сенсорные алерты —

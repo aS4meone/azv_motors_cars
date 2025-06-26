@@ -13,6 +13,7 @@ from app.glonassoft_api.glonass_auth import get_auth_token
 from app.glonassoft_api.history_car import fetch_gps_coordinates_async
 from app.glonassoft_api.last_car_data import get_vehicle_data, get_last_vehicles_data
 from app.models.car_model import Vehicle
+from app.rented_cache import fetch_rented_plates
 from app.router import router
 from app.alerts import process_vehicle_notifications
 
@@ -156,8 +157,10 @@ def ensure_initial_vehicles():
     db = SessionLocal()
     try:
         defaults = [
-            {"vehicle_id": 800212421, "vehicle_imei": "866011056074131", "name": "MB CLA45s"},
-            {"vehicle_id": 800153076, "vehicle_imei": "866011056063951", "name": "Haval F7x"},
+            {"vehicle_id": 800212421, "vehicle_imei": "866011056074131", "name": "MB CLA45s",
+             "plate_number": "666AZV02"},
+            {"vehicle_id": 800153076, "vehicle_imei": "866011056063951", "name": "Haval F7x",
+             "plate_number": "422ABK02"},
         ]
         for d in defaults:
             if not db.query(Vehicle).filter_by(vehicle_imei=d["vehicle_imei"]).first():
@@ -185,9 +188,11 @@ async def startup():
     # Токен и непрерывное обновление
     await update_token()
     asyncio.create_task(continuous_update())
+    await fetch_rented_plates()
 
     # Планировщик только для токена
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(fetch_rented_plates, "interval", seconds=60)
     scheduler.add_job(update_token, 'interval', minutes=25)
     scheduler.start()
 

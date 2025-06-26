@@ -10,7 +10,7 @@ class Vehicle(Base):
     vehicle_id = Column(Integer, primary_key=True, autoincrement=False)
     vehicle_imei = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)  # новое поле
-
+    plate_number = Column(String, unique=True, nullable=False)
     longitude = Column(Float, nullable=True)
     latitude = Column(Float, nullable=True)
     altitude = Column(Float, nullable=True)

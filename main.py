@@ -75,7 +75,6 @@ async def update_vehicles():
         vehicles = db.query(Vehicle).all()
         notifications = []
         ids = [v.vehicle_id for v in vehicles]
-
         for v in vehicles:
             try:
                 data = await get_vehicle_data(token, v.vehicle_imei)
@@ -117,14 +116,18 @@ async def update_vehicles():
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива (CAN-шина[1]) — обновляем только если двигатель заведён —
-                if v.is_engine_on:
-                    raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
+                # — Уровень топлива (CAN-шина[1]) — обновляем всегда когда доступны данные —
+                raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
+                if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
                     try:
                         v.fuel_level = parse_numeric(raw_fuel)
+                        logger.debug(f"[Vehicle {v.vehicle_imei}] updated fuel level: {v.fuel_level}")
                     except Exception as e:
                         logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {raw_fuel!r}: {e}")
                         # оставляем предыдущий уровень топлива
+                elif v.is_engine_on:
+                    # Если двигатель работает, но данных о топливе нет, логируем это
+                    logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
 
                 # — Создаём уведомление по данным машины —
                 notifications.append(asyncio.create_task(
@@ -168,7 +171,7 @@ def ensure_initial_vehicles():
     db = SessionLocal()
     try:
         defaults = [
-            {"vehicle_id": 800212421, "vehicle_imei": "866011056074131", "name": "MB CLA45s",
+            {"vehicle_id": 800212421, "vehicle_imei": "869132074567851", "name": "MB CLA45s",
              "plate_number": "666AZV02"},
             {"vehicle_id": 800153076, "vehicle_imei": "866011056063951", "name": "Haval F7x",
              "plate_number": "422ABK02"},

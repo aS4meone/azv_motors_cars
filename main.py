@@ -190,7 +190,11 @@ def ensure_initial_vehicles():
                 db.add(Vehicle(**d))
                 logger.info(f"Added new vehicle: {d['name']} (ID: {d['vehicle_id']})")
             else:
-                logger.info(f"Vehicle already exists: {d['name']} (ID: {d['vehicle_id']})")
+                # Обновляем существующую запись
+                existing_vehicle.vehicle_imei = d["vehicle_imei"]
+                existing_vehicle.name = d["name"]
+                existing_vehicle.plate_number = d["plate_number"]
+                logger.info(f"Updated existing vehicle: {d['name']} (ID: {d['vehicle_id']}, IMEI: {d['vehicle_imei']})")
         db.commit()
         logger.info(f"Initial vehicles updated")
     except Exception as e:

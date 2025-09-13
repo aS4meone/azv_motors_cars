@@ -181,6 +181,9 @@ def ensure_initial_vehicles():
                 db.add(Vehicle(**d))
         db.commit()
         logger.info(f"Initial vehicles updated")
+    except Exception as e:
+        logger.error(f"Error initializing vehicles: {e}")
+        db.rollback()
     finally:
         db.close()
 

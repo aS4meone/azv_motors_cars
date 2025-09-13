@@ -38,7 +38,7 @@ class VehicleResponse(BaseModel):
     engine_hours: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 @router.post("/", response_model=VehicleResponse, status_code=201)

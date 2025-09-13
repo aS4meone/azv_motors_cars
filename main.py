@@ -61,8 +61,12 @@ def extract_from_items(items: list[dict], key_name: str) -> str:
 
 async def update_token():
     global token
-    token = await get_auth_token("https://regions.glonasssoft.ru", "%CLIENT", "12345678")
-    logger.info("Token updated")
+    try:
+        token = await get_auth_token("https://regions.glonasssoft.ru", "%CLIENT", "12345678")
+        logger.info("Token updated")
+    except Exception as e:
+        logger.error(f"Error updating token: {e}")
+        token = None
 
 
 async def update_vehicles():
@@ -164,7 +168,11 @@ async def update_vehicles():
 
 async def continuous_update():
     while True:
-        await update_vehicles()
+        try:
+            await update_vehicles()
+        except Exception as e:
+            logger.error(f"Error in continuous_update: {e}")
+        await asyncio.sleep(30)  # Пауза между обновлениями
 
 
 def ensure_initial_vehicles():
@@ -177,8 +185,12 @@ def ensure_initial_vehicles():
              "plate_number": "422ABK02"},
         ]
         for d in defaults:
-            if not db.query(Vehicle).filter_by(vehicle_imei=d["vehicle_imei"]).first():
+            existing_vehicle = db.query(Vehicle).filter_by(vehicle_id=d["vehicle_id"]).first()
+            if not existing_vehicle:
                 db.add(Vehicle(**d))
+                logger.info(f"Added new vehicle: {d['name']} (ID: {d['vehicle_id']})")
+            else:
+                logger.info(f"Vehicle already exists: {d['name']} (ID: {d['vehicle_id']})")
         db.commit()
         logger.info(f"Initial vehicles updated")
     except Exception as e:

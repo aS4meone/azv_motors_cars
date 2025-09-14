@@ -86,23 +86,6 @@ async def update_vehicles():
                 pkg = data.get("PackageItems", [])
                 regs = data.get("RegistredSensors", [])
                 unregs = data.get("UnregisteredSensors", [])
-                
-                # Отладка: выводим все данные
-                logger.info(f"\n=== Данные для {v.vehicle_imei} ({v.name}) ===")
-                
-                logger.info("\n--- PackageItems ---")
-                for item in pkg:
-                    logger.info(f"  {item.get('name', 'N/A')}: {item.get('value', 'N/A')}")
-                
-                logger.info("\n--- RegistredSensors ---")
-                for sensor in regs:
-                    logger.info(f"  {sensor.get('name', 'N/A')}: {sensor.get('value', 'N/A')}")
-                
-                logger.info("\n--- UnregisteredSensors ---")
-                for sensor in unregs:
-                    logger.info(f"  {sensor.get('name', 'N/A')}: {sensor.get('value', 'N/A')}")
-                
-                logger.info("=" * 60)
 
                 # — Гео —
                 v.latitude = parse_numeric(extract_from_items(pkg, "Широта"))

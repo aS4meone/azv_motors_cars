@@ -88,21 +88,21 @@ async def update_vehicles():
                 unregs = data.get("UnregisteredSensors", [])
                 
                 # Отладка: выводим все данные
-                print(f"\n=== Данные для {v.vehicle_imei} ({v.name}) ===")
+                logger.info(f"\n=== Данные для {v.vehicle_imei} ({v.name}) ===")
                 
-                print("\n--- PackageItems ---")
+                logger.info("\n--- PackageItems ---")
                 for item in pkg:
-                    print(f"  {item.get('name', 'N/A')}: {item.get('value', 'N/A')}")
+                    logger.info(f"  {item.get('name', 'N/A')}: {item.get('value', 'N/A')}")
                 
-                print("\n--- RegistredSensors ---")
+                logger.info("\n--- RegistredSensors ---")
                 for sensor in regs:
-                    print(f"  {sensor.get('name', 'N/A')}: {sensor.get('value', 'N/A')}")
+                    logger.info(f"  {sensor.get('name', 'N/A')}: {sensor.get('value', 'N/A')}")
                 
-                print("\n--- UnregisteredSensors ---")
+                logger.info("\n--- UnregisteredSensors ---")
                 for sensor in unregs:
-                    print(f"  {sensor.get('name', 'N/A')}: {sensor.get('value', 'N/A')}")
+                    logger.info(f"  {sensor.get('name', 'N/A')}: {sensor.get('value', 'N/A')}")
                 
-                print("=" * 60)
+                logger.info("=" * 60)
 
                 # — Гео —
                 v.latitude = parse_numeric(extract_from_items(pkg, "Широта"))

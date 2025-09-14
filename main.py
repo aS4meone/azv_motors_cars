@@ -15,7 +15,6 @@ from app.dependencies.database.database import SessionLocal
 from app.glonassoft_api.glonass_auth import get_auth_token
 from app.glonassoft_api.history_car import fetch_gps_coordinates_async
 from app.glonassoft_api.last_car_data import get_vehicle_data, get_last_vehicles_data
-from app.glonassoft_api.utils import extract_sensor_value
 from app.models.car_model import Vehicle
 from app.rented_cache import fetch_rented_plates
 from app.router import router
@@ -121,13 +120,9 @@ async def update_vehicles():
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива — ищем в RegisteredSensors и UnregisteredSensors —
-                raw_fuel = (
-                    extract_sensor_value(regs, "уровень топлива")      # Registered
-                    or extract_sensor_value(unregs, "уровень топлива")  # Unregistered
-                )
-                
-                if raw_fuel:
+                # — Уровень топлива (CAN-шина[1]) — обновляем всегда когда доступны данные —
+                raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
+                if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
                     try:
                         v.fuel_level = parse_numeric(raw_fuel)
                         logger.debug(f"[Vehicle {v.vehicle_imei}] updated fuel level: {v.fuel_level}")

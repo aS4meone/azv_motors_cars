@@ -24,7 +24,6 @@ class Vehicle(Base):
     engine_temperature = Column(Float, nullable=True)
     is_hood_open = Column(Boolean, default=False)
     fuel_level = Column(Float, nullable=True)
-    fuel_sensor_name = Column(String, nullable=True)  # Кэшируем найденный сенсор
     engine_hours = Column(Float, default=0.0)
 
     def __repr__(self):

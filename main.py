@@ -86,6 +86,12 @@ async def update_vehicles():
                 pkg = data.get("PackageItems", [])
                 regs = data.get("RegistredSensors", [])
                 unregs = data.get("UnregisteredSensors", [])
+                
+                # Отладочная информация для топлива
+                logger.debug(f"[Vehicle {v.vehicle_imei}] Full API response keys: {list(data.keys())}")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] PackageItems: {[item.get('name') for item in pkg]}")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] RegisteredSensors: {[item.get('name') for item in regs]}")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] UnregisteredSensors: {[item.get('name') for item in unregs]}")
 
                 # — Гео —
                 v.latitude = parse_numeric(extract_from_items(pkg, "Широта"))
@@ -122,14 +128,36 @@ async def update_vehicles():
 
                 # — Уровень топлива (CAN-шина[1]) — обновляем всегда когда доступны данные —
                 raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
-                if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
-                    try:
-                        v.fuel_level = parse_numeric(raw_fuel)
-                        logger.debug(f"[Vehicle {v.vehicle_imei}] updated fuel level: {v.fuel_level}")
-                    except Exception as e:
-                        logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {raw_fuel!r}: {e}")
-                        # оставляем предыдущий уровень топлива
-                elif v.is_engine_on:
+                logger.debug(f"[Vehicle {v.vehicle_imei}] raw_fuel from RegisteredSensors: {raw_fuel!r}")
+                
+                # Попробуем также поискать в PackageItems
+                raw_fuel_pkg = extract_from_items(pkg, "Уровень топлива")
+                logger.debug(f"[Vehicle {v.vehicle_imei}] raw_fuel from PackageItems: {raw_fuel_pkg!r}")
+                
+                # Попробуем другие возможные названия
+                fuel_variants = [
+                    "Уровень топлива (CAN-шина[1])",
+                    "Уровень топлива",
+                    "Топливо",
+                    "Fuel Level",
+                    "Уровень топлива (CAN-шина[1])"
+                ]
+                
+                fuel_found = False
+                for fuel_name in fuel_variants:
+                    fuel_value = extract_from_items(regs, fuel_name)
+                    if not fuel_value:
+                        fuel_value = extract_from_items(pkg, fuel_name)
+                    if fuel_value and fuel_value.lower() not in ["данных нет", "нет данных", ""]:
+                        try:
+                            v.fuel_level = parse_numeric(fuel_value)
+                            logger.info(f"[Vehicle {v.vehicle_imei}] updated fuel level from '{fuel_name}': {v.fuel_level}")
+                            fuel_found = True
+                            break
+                        except Exception as e:
+                            logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {fuel_value!r} from '{fuel_name}': {e}")
+                
+                if not fuel_found and v.is_engine_on:
                     # Если двигатель работает, но данных о топливе нет, логируем это
                     logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
 

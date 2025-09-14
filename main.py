@@ -15,12 +15,13 @@ from app.dependencies.database.database import SessionLocal
 from app.glonassoft_api.glonass_auth import get_auth_token
 from app.glonassoft_api.history_car import fetch_gps_coordinates_async
 from app.glonassoft_api.last_car_data import get_vehicle_data, get_last_vehicles_data
+from app.glonassoft_api.utils import extract_sensor_value
 from app.models.car_model import Vehicle
 from app.rented_cache import fetch_rented_plates
 from app.router import router
 from app.alerts import process_vehicle_notifications
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -86,12 +87,6 @@ async def update_vehicles():
                 pkg = data.get("PackageItems", [])
                 regs = data.get("RegistredSensors", [])
                 unregs = data.get("UnregisteredSensors", [])
-                
-                # Отладочная информация для топлива
-                logger.debug(f"[Vehicle {v.vehicle_imei}] Full API response keys: {list(data.keys())}")
-                logger.debug(f"[Vehicle {v.vehicle_imei}] PackageItems: {[item.get('name') for item in pkg]}")
-                logger.debug(f"[Vehicle {v.vehicle_imei}] RegisteredSensors: {[item.get('name') for item in regs]}")
-                logger.debug(f"[Vehicle {v.vehicle_imei}] UnregisteredSensors: {[item.get('name') for item in unregs]}")
 
                 # — Гео —
                 v.latitude = parse_numeric(extract_from_items(pkg, "Широта"))
@@ -126,38 +121,20 @@ async def update_vehicles():
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива (CAN-шина[1]) — обновляем всегда когда доступны данные —
-                raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
-                logger.debug(f"[Vehicle {v.vehicle_imei}] raw_fuel from RegisteredSensors: {raw_fuel!r}")
+                # — Уровень топлива — ищем в RegisteredSensors и UnregisteredSensors —
+                raw_fuel = (
+                    extract_sensor_value(regs, "уровень топлива")      # Registered
+                    or extract_sensor_value(unregs, "уровень топлива")  # Unregistered
+                )
                 
-                # Попробуем также поискать в PackageItems
-                raw_fuel_pkg = extract_from_items(pkg, "Уровень топлива")
-                logger.debug(f"[Vehicle {v.vehicle_imei}] raw_fuel from PackageItems: {raw_fuel_pkg!r}")
-                
-                # Попробуем другие возможные названия
-                fuel_variants = [
-                    "Уровень топлива (CAN-шина[1])",
-                    "Уровень топлива",
-                    "Топливо",
-                    "Fuel Level",
-                    "Уровень топлива (CAN-шина[1])"
-                ]
-                
-                fuel_found = False
-                for fuel_name in fuel_variants:
-                    fuel_value = extract_from_items(regs, fuel_name)
-                    if not fuel_value:
-                        fuel_value = extract_from_items(pkg, fuel_name)
-                    if fuel_value and fuel_value.lower() not in ["данных нет", "нет данных", ""]:
-                        try:
-                            v.fuel_level = parse_numeric(fuel_value)
-                            logger.info(f"[Vehicle {v.vehicle_imei}] updated fuel level from '{fuel_name}': {v.fuel_level}")
-                            fuel_found = True
-                            break
-                        except Exception as e:
-                            logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {fuel_value!r} from '{fuel_name}': {e}")
-                
-                if not fuel_found and v.is_engine_on:
+                if raw_fuel:
+                    try:
+                        v.fuel_level = parse_numeric(raw_fuel)
+                        logger.debug(f"[Vehicle {v.vehicle_imei}] updated fuel level: {v.fuel_level}")
+                    except Exception as e:
+                        logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {raw_fuel!r}: {e}")
+                        # оставляем предыдущий уровень топлива
+                elif v.is_engine_on:
                     # Если двигатель работает, но данных о топливе нет, логируем это
                     logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
 

@@ -103,25 +103,25 @@ async def update_vehicles():
                     v.speed = None
                 logger.debug(f"[Vehicle {v.vehicle_imei}] parsed v.speed = {v.speed}")
 
-                # — Пробег (CAN-шина[5]) —
-                v.mileage = parse_numeric(extract_from_items(regs, "Датчик пробега (CAN-шина[5])"))
+                # — Пробег (can97) —
+                v.mileage = parse_numeric(extract_from_items(regs, "Пробег (can97)"))
 
                 # — RPM и состояние двигателя —
-                v.rpm = parse_int(extract_from_items(regs, "Обороты двигателя (CAN-шина[3])"))
+                v.rpm = parse_int(extract_from_items(regs, "Обороты двигателя (can101)"))
                 v.is_engine_on = v.rpm >= 1
 
                 # — Температура двигателя —
-                temp = extract_from_items(regs, "Температура двигателя (CAN-шина[4])")
+                temp = extract_from_items(regs, "Температура двигателя (can102)")
                 v.engine_temperature = parse_numeric(temp) if temp and temp.lower() != "данных нет" else None
 
-                # — Капот (RegisteredSensors) с отладкой —
-                raw_hood = extract_from_items(regs, "Капот (Дискретный[0])")
+                # — Капот (can37) —
+                raw_hood = extract_from_items(regs, "Капот (can37)")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] raw_hood status (RegisteredSensors): {raw_hood!r}")
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива (CAN-шина[1]) — обновляем всегда когда доступны данные —
-                raw_fuel = extract_from_items(regs, "Уровень топлива (CAN-шина[1])")
+                # — Уровень топлива (can100) —
+                raw_fuel = extract_from_items(regs, "Уровень топлива (can100)")
                 if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
                     try:
                         v.fuel_level = parse_numeric(raw_fuel)

@@ -103,25 +103,59 @@ async def update_vehicles():
                     v.speed = None
                 logger.debug(f"[Vehicle {v.vehicle_imei}] parsed v.speed = {v.speed}")
 
-                # — Пробег (can97) —
-                v.mileage = parse_numeric(extract_from_items(regs, "Пробег (can97)"))
+                # — Пробег (универсальный поиск) —
+                mileage_keys = ["Пробег (can97)", "Датчик пробега (can_mileage)"]
+                for key in mileage_keys:
+                    mileage_value = extract_from_items(regs, key)
+                    if mileage_value:
+                        v.mileage = parse_numeric(mileage_value)
+                        break
+                else:
+                    v.mileage = 0.0
 
-                # — RPM и состояние двигателя —
-                v.rpm = parse_int(extract_from_items(regs, "Обороты двигателя (can101)"))
+                # — RPM и состояние двигателя (универсальный поиск) —
+                rpm_keys = ["Обороты двигателя (can101)", "Обороты двигателя (engine_rpm)"]
+                rpm_value = None
+                for key in rpm_keys:
+                    rpm_value = extract_from_items(regs, key)
+                    if rpm_value and rpm_value.lower() != "данных нет":
+                        break
+                
+                if rpm_value and rpm_value.lower() != "данных нет":
+                    v.rpm = parse_int(rpm_value)
+                else:
+                    v.rpm = 0
                 v.is_engine_on = v.rpm >= 1
 
-                # — Температура двигателя —
-                temp = extract_from_items(regs, "Температура двигателя (can102)")
-                v.engine_temperature = parse_numeric(temp) if temp and temp.lower() != "данных нет" else None
+                # — Температура двигателя (универсальный поиск) —
+                temp_keys = ["Температура двигателя (can102)", "Температура двигателя (engine_coolant_temp)"]
+                temp_value = None
+                for key in temp_keys:
+                    temp_value = extract_from_items(regs, key)
+                    if temp_value and temp_value.lower() != "данных нет":
+                        break
+                
+                v.engine_temperature = parse_numeric(temp_value) if temp_value and temp_value.lower() != "данных нет" else None
 
-                # — Капот (can37) —
-                raw_hood = extract_from_items(regs, "Капот (can37)")
+                # — Капот (универсальный поиск) —
+                hood_keys = ["Капот (can37)", "Капот (in0;iobits0)"]
+                raw_hood = None
+                for key in hood_keys:
+                    raw_hood = extract_from_items(regs, key)
+                    if raw_hood:
+                        break
+                
                 logger.debug(f"[Vehicle {v.vehicle_imei}] raw_hood status (RegisteredSensors): {raw_hood!r}")
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива (can100) —
-                raw_fuel = extract_from_items(regs, "Уровень топлива (can100)")
+                # — Уровень топлива (универсальный поиск) —
+                fuel_keys = ["Уровень топлива (can100)", "Уровень топлива (can_fuel_volume)"]
+                raw_fuel = None
+                for key in fuel_keys:
+                    raw_fuel = extract_from_items(regs, key)
+                    if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:
+                        break
                 if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
                     try:
                         v.fuel_level = parse_numeric(raw_fuel)

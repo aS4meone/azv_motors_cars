@@ -109,20 +109,38 @@ async def process_vehicle_notifications(data: Dict, vehicle: Vehicle):
             f"{name}: Ручник включён при движении {speed} км/ч (возможно дрифт)"
         )
 
-    # — RPM
-    raw_rpm = extract_from_items(regs, "Обороты двигателя (CAN-шина[3])")
-    rpm = parse_int(raw_rpm)
+    # — RPM (универсальный поиск)
+    rpm_keys = ["Обороты двигателя (CAN-шина[3])", "Обороты двигателя (can101)", "Обороты двигателя (engine_rpm)"]
+    raw_rpm = None
+    for key in rpm_keys:
+        raw_rpm = extract_from_items(regs, key)
+        if raw_rpm and raw_rpm.lower() != "данных нет":
+            break
+    
+    rpm = parse_int(raw_rpm) if raw_rpm and raw_rpm.lower() != "данных нет" else 0
     maybe(rpm >= 4000, "rpm_high", f"{name}: Высокие обороты двигателя {rpm}")
 
-    # — Температура двигателя
-    temp_str = extract_from_items(regs, "Температура двигателя (CAN-шина[4])")
+    # — Температура двигателя (универсальный поиск)
+    temp_keys = ["Температура двигателя (CAN-шина[4])", "Температура двигателя (can102)", "Температура двигателя (engine_coolant_temp)"]
+    temp_str = None
+    for key in temp_keys:
+        temp_str = extract_from_items(regs, key)
+        if temp_str and temp_str.lower() != "данных нет":
+            break
+    
     temp = parse_numeric(temp_str) if temp_str and temp_str.lower() != "данных нет" else None
     if temp is not None:
         maybe(temp >= 100, "temp_high", f"{name}: Температура двигателя {temp}°C")
 
-    # — Капот
-    raw_hood = extract_from_items(regs, "Капот (Дискретный[0])")
-    hood_open = raw_hood.lower() == "открыт"
+    # — Капот (универсальный поиск)
+    hood_keys = ["Капот (Дискретный[0])", "Капот (can37)", "Капот (in0;iobits0)"]
+    raw_hood = None
+    for key in hood_keys:
+        raw_hood = extract_from_items(regs, key)
+        if raw_hood:
+            break
+    
+    hood_open = raw_hood and raw_hood.lower() == "открыт"
     maybe(hood_open, "hood_open", f"{name}: Капот открыт")
 
     # — Accel-сенсоры (особый режим для SH3) —

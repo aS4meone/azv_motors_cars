@@ -59,6 +59,16 @@ def extract_from_items(items: list[dict], key_name: str) -> str:
     return ""
 
 
+def extract_first_match(items: list[dict], possible_keys: list[str]) -> str:
+    """Return value for the first present key name (case-insensitive), else empty string."""
+    lower_to_value = {item.get("name", "").lower(): item.get("value", "").strip() for item in items}
+    for key in possible_keys:
+        val = lower_to_value.get(key.lower())
+        if val is not None and val != "":
+            return val
+    return ""
+
+
 async def update_token():
     global token
     try:
@@ -138,7 +148,7 @@ async def update_vehicles():
                 v.engine_temperature = parse_numeric(temp_value) if temp_value and temp_value.lower() != "данных нет" else None
 
                 # — Капот (универсальный поиск) —
-                hood_keys = ["Капот (can37)", "Капот (in0;iobits0)"]
+                hood_keys = ["Капот (can37)", "Капот (in0;iobits0)", "Капот (can34)"]
                 raw_hood = None
                 for key in hood_keys:
                     raw_hood = extract_from_items(regs, key)
@@ -166,6 +176,65 @@ async def update_vehicles():
                 elif v.is_engine_on:
                     # Если двигатель работает, но данных о топливе нет, логируем это
                     logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
+
+                # — Багажник —
+                trunk_val = extract_first_match(regs, ["Багажник (can35)", "Багажник (can38)"])
+                v.is_trunk_open = bool(trunk_val and trunk_val.lower() == "открыт")
+
+                # — Стояночный/парковочный тормоз —
+                handbrake_val = extract_first_match(regs, [
+                    "Стояночный тормоз (can41)",
+                    "Парковочный тормоз (can43)",
+                ])
+                v.is_handbrake_on = bool(handbrake_val and handbrake_val.lower().startswith("вкл"))
+
+                # — Фары — (учтём «Фары» как общий признак и «Ближний свет»)
+                lights_val = extract_first_match(regs, [
+                    "Фары (can38)",
+                    "Ближний свет (can41)",
+                ])
+                v.are_lights_on = bool(lights_val and (lights_val.lower().startswith("вкл") or lights_val.lower() == "включен"))
+
+                # — Режим AUTO света —
+                auto_light_val = extract_first_match(regs, [
+                    "Режим света AUTO (can42)",
+                    "Режим AUTO света",
+                ])
+                v.is_light_auto_mode_on = bool(auto_light_val and auto_light_val.lower().startswith("вкл"))
+
+                # — Двери —
+                fr_door = extract_first_match(regs, ["ПП Дверь (can42)", "ПП Дверь", "passenger front door"])
+                fl_door = extract_first_match(regs, ["ПЛ Дверь (can44)", "ПЛ Дверь", "driver front door"])
+                rl_door = extract_first_match(regs, ["ЗЛ Дверь (can46)", "ЗЛ Дверь", "rear left door"])
+                rr_door = extract_first_match(regs, ["ЗП Дверь (can48)", "ЗП Дверь", "rear right door"])
+                v.front_right_door_open = bool(fr_door and fr_door.lower() == "открыта")
+                v.front_left_door_open = bool(fl_door and fl_door.lower() == "открыта")
+                v.rear_left_door_open = bool(rl_door and rl_door.lower() == "открыта")
+                v.rear_right_door_open = bool(rr_door and rr_door.lower() == "открыта")
+
+                # — Замки дверей —
+                fr_lock = extract_first_match(regs, ["ПП Замок (can43)", "ПП Замок", "front right lock"])
+                fl_lock = extract_first_match(regs, ["ПЛ Замок (can45)", "ПЛ Замок", "front left lock"])
+                rl_lock = extract_first_match(regs, ["ЗЛ Замок (can47)", "ЗЛ Замок", "rear left lock"])
+                rr_lock = extract_first_match(regs, ["ЗП Замок (can49)", "ЗП Замок", "rear right lock"])
+                v.front_right_door_locked = bool(fr_lock and fr_lock.lower() == "закрыт")
+                v.front_left_door_locked = bool(fl_lock and fl_lock.lower() == "закрыт")
+                v.rear_left_door_locked = bool(rl_lock and rl_lock.lower() == "закрыт")
+                v.rear_right_door_locked = bool(rr_lock and rr_lock.lower() == "закрыт")
+
+                # — Центральные замки —
+                central_locks = extract_first_match(regs, ["Замки (can40)", "Замки (центральный)", "Замки"])
+                v.central_locks_locked = bool(central_locks and central_locks.lower().startswith("закрыт"))
+
+                # — Стёкла —
+                fl_win = extract_first_match(regs, ["ПЛ Стекло (can50)", "ПЛ Стекло", "front left window"])
+                fr_win = extract_first_match(regs, ["ПП Стекло (can51)", "ПП Стекло", "front right window"])
+                rl_win = extract_first_match(regs, ["ЗЛ Стекло (can52)", "ЗЛ Стекло", "rear left window"])
+                rr_win = extract_first_match(regs, ["ЗП Стекло (can53)", "ЗП Стекло", "rear right window"])
+                v.front_left_window_closed = bool(fl_win and fl_win.lower() == "закрыто")
+                v.front_right_window_closed = bool(fr_win and fr_win.lower() == "закрыто")
+                v.rear_left_window_closed = bool(rl_win and rl_win.lower() == "закрыто")
+                v.rear_right_window_closed = bool(rr_win and rr_win.lower() == "закрыто")
 
                 # — Создаём уведомление по данным машины —
                 notifications.append(asyncio.create_task(

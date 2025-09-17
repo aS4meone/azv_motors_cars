@@ -37,6 +37,29 @@ class VehicleResponse(BaseModel):
     fuel_level: Optional[float] = None
     engine_hours: float
 
+    # doors/windows/locks/lights additions
+    front_right_door_open: bool
+    front_left_door_open: bool
+    rear_left_door_open: bool
+    rear_right_door_open: bool
+
+    front_right_door_locked: bool
+    front_left_door_locked: bool
+    rear_left_door_locked: bool
+    rear_right_door_locked: bool
+
+    central_locks_locked: bool
+
+    front_left_window_closed: bool
+    front_right_window_closed: bool
+    rear_left_window_closed: bool
+    rear_right_window_closed: bool
+
+    is_trunk_open: bool
+    is_handbrake_on: bool
+    are_lights_on: bool
+    is_light_auto_mode_on: bool
+
     class Config:
         from_attributes = True
 

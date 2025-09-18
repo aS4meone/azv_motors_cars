@@ -178,15 +178,29 @@ async def update_vehicles():
                     logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
 
                 # — Багажник —
+                # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
                 trunk_val = extract_first_match(regs, ["Багажник (can35)", "Багажник (can38)"])
-                v.is_trunk_open = bool(trunk_val and trunk_val.lower() == "открыт")
+                if trunk_val:
+                    v.is_trunk_open = bool(trunk_val.lower() == "открыт")
+                else:
+                    # Формат UnregisteredSensors: CanSafetyFlags_trunk = "True"/"False"
+                    # False = багажник открыт, True = багажник закрыт
+                    trunk_unreg = extract_first_match(unregs, ["CanSafetyFlags_trunk"])
+                    v.is_trunk_open = trunk_unreg.lower() == "false" if trunk_unreg else False
 
                 # — Стояночный/парковочный тормоз —
+                # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
                 handbrake_val = extract_first_match(regs, [
                     "Стояночный тормоз (can41)",
                     "Парковочный тормоз (can43)",
                 ])
-                v.is_handbrake_on = bool(handbrake_val and handbrake_val.lower().startswith("вкл"))
+                if handbrake_val:
+                    v.is_handbrake_on = bool(handbrake_val.lower().startswith("вкл"))
+                else:
+                    # Формат UnregisteredSensors: CanSafetyFlags_handbrake = "True"/"False"
+                    # False = ручник включен, True = ручник выключен
+                    handbrake_unreg = extract_first_match(unregs, ["CanSafetyFlags_handbrake"])
+                    v.is_handbrake_on = handbrake_unreg.lower() == "false" if handbrake_unreg else False
 
                 # — Фары — (учтём «Фары» как общий признак и «Ближний свет»)
                 lights_val = extract_first_match(regs, [
@@ -203,28 +217,70 @@ async def update_vehicles():
                 v.is_light_auto_mode_on = bool(auto_light_val and auto_light_val.lower().startswith("вкл"))
 
                 # — Двери —
+                # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
                 fr_door = extract_first_match(regs, ["ПП Дверь (can42)", "ПП Дверь", "passenger front door"])
                 fl_door = extract_first_match(regs, ["ПЛ Дверь (can44)", "ПЛ Дверь", "driver front door"])
                 rl_door = extract_first_match(regs, ["ЗЛ Дверь (can46)", "ЗЛ Дверь", "rear left door"])
                 rr_door = extract_first_match(regs, ["ЗП Дверь (can48)", "ЗП Дверь", "rear right door"])
-                v.front_right_door_open = bool(fr_door and fr_door.lower() == "открыта")
-                v.front_left_door_open = bool(fl_door and fl_door.lower() == "открыта")
-                v.rear_left_door_open = bool(rl_door and rl_door.lower() == "открыта")
-                v.rear_right_door_open = bool(rr_door and rr_door.lower() == "открыта")
+                
+                if fr_door or fl_door or rl_door or rr_door:
+                    # Формат RegistredSensors: "Открыта"/"Закрыта"
+                    v.front_right_door_open = bool(fr_door and fr_door.lower() == "открыта")
+                    v.front_left_door_open = bool(fl_door and fl_door.lower() == "открыта")
+                    v.rear_left_door_open = bool(rl_door and rl_door.lower() == "открыта")
+                    v.rear_right_door_open = bool(rr_door and rr_door.lower() == "открыта")
+                else:
+                    # Формат UnregisteredSensors: CanSafetyFlags_* = "True"/"False"
+                    # False = дверь открыта, True = дверь закрыта
+                    fr_door_unreg = extract_first_match(unregs, ["CanSafetyFlags_passangerdoor"])  # передняя правая
+                    fl_door_unreg = extract_first_match(unregs, ["CanSafetyFlags_driverdoor"])     # передняя левая
+                    rl_door_unreg = extract_first_match(unregs, ["CanSafetyFlags_backdoor"])       # задняя левая
+                    rr_door_unreg = extract_first_match(unregs, ["CanSafetyFlags_frontdoor"])      # задняя правая
+                    
+                    v.front_right_door_open = fr_door_unreg.lower() == "false" if fr_door_unreg else False
+                    v.front_left_door_open = fl_door_unreg.lower() == "false" if fl_door_unreg else False
+                    v.rear_left_door_open = rl_door_unreg.lower() == "false" if rl_door_unreg else False
+                    v.rear_right_door_open = rr_door_unreg.lower() == "false" if rr_door_unreg else False
 
                 # — Замки дверей —
+                # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
                 fr_lock = extract_first_match(regs, ["ПП Замок (can43)", "ПП Замок", "front right lock"])
                 fl_lock = extract_first_match(regs, ["ПЛ Замок (can45)", "ПЛ Замок", "front left lock"])
                 rl_lock = extract_first_match(regs, ["ЗЛ Замок (can47)", "ЗЛ Замок", "rear left lock"])
                 rr_lock = extract_first_match(regs, ["ЗП Замок (can49)", "ЗП Замок", "rear right lock"])
-                v.front_right_door_locked = bool(fr_lock and fr_lock.lower() == "закрыт")
-                v.front_left_door_locked = bool(fl_lock and fl_lock.lower() == "закрыт")
-                v.rear_left_door_locked = bool(rl_lock and rl_lock.lower() == "закрыт")
-                v.rear_right_door_locked = bool(rr_lock and rr_lock.lower() == "закрыт")
+                
+                if fr_lock or fl_lock or rl_lock or rr_lock:
+                    # Формат RegistredSensors: "Открыт"/"Закрыт"
+                    v.front_right_door_locked = bool(fr_lock and fr_lock.lower() != "открыт")
+                    v.front_left_door_locked = bool(fl_lock and fl_lock.lower() != "открыт")
+                    v.rear_left_door_locked = bool(rl_lock and rl_lock.lower() != "открыт")
+                    v.rear_right_door_locked = bool(rr_lock and rr_lock.lower() != "открыт")
+                else:
+                    # Формат UnregisteredSensors: CanSafetyFlags_* = "True"/"False"
+                    # False = замок заблокирован, True = замок открыт
+                    fr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_passangerdoor"])  # передняя правая
+                    fl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_driverdoor"])     # передняя левая
+                    rl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_backdoor"])       # задняя левая
+                    rr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_frontdoor"])      # задняя правая
+                    
+                    v.front_right_door_locked = fr_lock_unreg.lower() == "false" if fr_lock_unreg else False
+                    v.front_left_door_locked = fl_lock_unreg.lower() == "false" if fl_lock_unreg else False
+                    v.rear_left_door_locked = rl_lock_unreg.lower() == "false" if rl_lock_unreg else False
+                    v.rear_right_door_locked = rr_lock_unreg.lower() == "false" if rr_lock_unreg else False
 
                 # — Центральные замки —
+                # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
                 central_locks = extract_first_match(regs, ["Замки (can40)", "Замки (центральный)", "Замки"])
-                v.central_locks_locked = bool(central_locks and central_locks.lower().startswith("закрыт"))
+                if central_locks:
+                    v.central_locks_locked = bool(central_locks.lower().startswith("закрыт"))
+                else:
+                    # Если не найдено в RegistredSensors, ищем в UnregisteredSensors (для Haval F7x)
+                    central_locks_unreg = extract_first_match(unregs, ["CanSafetyFlags_lock"])
+                    if central_locks_unreg:
+                        # CanSafetyFlags_lock: "False" = замки заблокированы, "True" = замки открыты
+                        v.central_locks_locked = central_locks_unreg.lower() == "false"
+                    else:
+                        v.central_locks_locked = False
 
                 # — Стёкла —
                 fl_win = extract_first_match(regs, ["ПЛ Стекло (can50)", "ПЛ Стекло", "front left window"])

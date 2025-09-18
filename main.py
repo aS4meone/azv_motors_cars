@@ -159,23 +159,48 @@ async def update_vehicles():
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива (универсальный поиск) —
+                # — Уровень топлива / заряд батареи (универсальный поиск) —
+                # 1) Пытаемся прочитать обычный уровень топлива
                 fuel_keys = ["Уровень топлива (can100)", "Уровень топлива (can_fuel_volume)"]
                 raw_fuel = None
                 for key in fuel_keys:
                     raw_fuel = extract_from_items(regs, key)
                     if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:
                         break
+
+                fuel_updated = False
                 if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
                     try:
                         v.fuel_level = parse_numeric(raw_fuel)
+                        fuel_updated = True
                         logger.debug(f"[Vehicle {v.vehicle_imei}] updated fuel level: {v.fuel_level}")
                     except Exception as e:
                         logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {raw_fuel!r}: {e}")
                         # оставляем предыдущий уровень топлива
-                elif v.is_engine_on:
-                    # Если двигатель работает, но данных о топливе нет, логируем это
-                    logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
+
+                # 2) Если это электрокар или просто пришёл сенсор заряда — используем его как fuel_level
+                if not fuel_updated:
+                    battery_keys = [
+                        "Заряд батареи (can36)",
+                        "Заряд батареи",
+                        "battery_charge",
+                    ]
+                    raw_batt = None
+                    for key in battery_keys:
+                        raw_batt = extract_from_items(regs, key)
+                        if raw_batt and raw_batt.lower() not in ["данных нет", "нет данных", ""]:
+                            break
+                    if raw_batt and raw_batt.lower() not in ["данных нет", "нет данных", ""]:
+                        try:
+                            v.fuel_level = parse_numeric(raw_batt)
+                            fuel_updated = True
+                            logger.debug(f"[Vehicle {v.vehicle_imei}] updated battery charge as fuel_level: {v.fuel_level}")
+                        except Exception as e:
+                            logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse battery charge {raw_batt!r}: {e}")
+
+                # 3) Если ничего не обновили — оставляем предыдущее значение без изменений
+                if not fuel_updated and v.is_engine_on:
+                    logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel/battery data available")
 
                 # — Багажник —
                 trunk_val = extract_first_match(regs, ["Багажник (can35)", "Багажник (can38)"])

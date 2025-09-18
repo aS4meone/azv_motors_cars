@@ -186,7 +186,7 @@ async def update_vehicles():
                     # Формат UnregisteredSensors: CanSafetyFlags_trunk = "True"/"False"
                     # False = багажник открыт, True = багажник закрыт
                     trunk_unreg = extract_first_match(unregs, ["CanSafetyFlags_trunk"])
-                    v.is_trunk_open = trunk_unreg.lower() == "false" if trunk_unreg else False
+                    v.is_trunk_open = trunk_unreg.lower() == "false" if trunk_unreg else True
 
                 # — Стояночный/парковочный тормоз —
                 # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
@@ -200,7 +200,7 @@ async def update_vehicles():
                     # Формат UnregisteredSensors: CanSafetyFlags_handbrake = "True"/"False"
                     # False = ручник включен, True = ручник выключен
                     handbrake_unreg = extract_first_match(unregs, ["CanSafetyFlags_handbrake"])
-                    v.is_handbrake_on = handbrake_unreg.lower() == "false" if handbrake_unreg else False
+                    v.is_handbrake_on = handbrake_unreg.lower() == "false" if handbrake_unreg else True
 
                 # — Фары — (учтём «Фары» как общий признак и «Ближний свет»)
                 lights_val = extract_first_match(regs, [
@@ -263,10 +263,10 @@ async def update_vehicles():
                     rl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_backdoor"])       # задняя левая
                     rr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_frontdoor"])      # задняя правая
                     
-                    v.front_right_door_locked = fr_lock_unreg.lower() == "false" if fr_lock_unreg else False
-                    v.front_left_door_locked = fl_lock_unreg.lower() == "false" if fl_lock_unreg else False
-                    v.rear_left_door_locked = rl_lock_unreg.lower() == "false" if rl_lock_unreg else False
-                    v.rear_right_door_locked = rr_lock_unreg.lower() == "false" if rr_lock_unreg else False
+                    v.front_right_door_locked = fr_lock_unreg.lower() == "false" if fr_lock_unreg else True
+                    v.front_left_door_locked = fl_lock_unreg.lower() == "false" if fl_lock_unreg else True
+                    v.rear_left_door_locked = rl_lock_unreg.lower() == "false" if rl_lock_unreg else True
+                    v.rear_right_door_locked = rr_lock_unreg.lower() == "false" if rr_lock_unreg else True
 
                 # — Центральные замки —
                 # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
@@ -280,7 +280,7 @@ async def update_vehicles():
                         # CanSafetyFlags_lock: "False" = замки заблокированы, "True" = замки открыты
                         v.central_locks_locked = central_locks_unreg.lower() == "false"
                     else:
-                        v.central_locks_locked = False
+                        v.central_locks_locked = True
 
                 # — Стёкла —
                 fl_win = extract_first_match(regs, ["ПЛ Стекло (can50)", "ПЛ Стекло", "front left window"])

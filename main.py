@@ -258,18 +258,15 @@ async def update_vehicles():
                 else:
                     # Формат UnregisteredSensors: CanSafetyFlags_* = "True"/"False"
                     # False = замок заблокирован, True = замок открыт
-                    logger.info(f"[DEBUG] Haval F7x - looking for locks in UnregisteredSensors")
                     fr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_passangerdoor"])  # передняя правая
                     fl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_driverdoor"])     # передняя левая
                     rl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_backdoor"])       # задняя левая
                     rr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_frontdoor"])      # задняя правая
-                    logger.info(f"[DEBUG] Found locks: fr={fr_lock_unreg}, fl={fl_lock_unreg}, rl={rl_lock_unreg}, rr={rr_lock_unreg}")
                     
                     v.front_right_door_locked = fr_lock_unreg.lower() == "false" if fr_lock_unreg else True
                     v.front_left_door_locked = fl_lock_unreg.lower() == "false" if fl_lock_unreg else True
                     v.rear_left_door_locked = rl_lock_unreg.lower() == "false" if rl_lock_unreg else True
                     v.rear_right_door_locked = rr_lock_unreg.lower() == "false" if rr_lock_unreg else True
-                    logger.info(f"[DEBUG] Final locks: fr={v.front_right_door_locked}, fl={v.front_left_door_locked}, rl={v.rear_left_door_locked}, rr={v.rear_right_door_locked}")
 
                 # — Центральные замки —
                 # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)

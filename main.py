@@ -159,48 +159,23 @@ async def update_vehicles():
                 v.is_hood_open = bool(raw_hood and raw_hood.lower() == "открыт")
                 logger.debug(f"[Vehicle {v.vehicle_imei}] determined is_hood_open = {v.is_hood_open}")
 
-                # — Уровень топлива / заряд батареи (универсальный поиск) —
-                # 1) Пытаемся прочитать обычный уровень топлива
+                # — Уровень топлива (универсальный поиск) —
                 fuel_keys = ["Уровень топлива (can100)", "Уровень топлива (can_fuel_volume)"]
                 raw_fuel = None
                 for key in fuel_keys:
                     raw_fuel = extract_from_items(regs, key)
                     if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:
                         break
-
-                fuel_updated = False
                 if raw_fuel and raw_fuel.lower() not in ["данных нет", "нет данных", ""]:  # Обновляем только если есть валидные данные о топливе
                     try:
                         v.fuel_level = parse_numeric(raw_fuel)
-                        fuel_updated = True
                         logger.debug(f"[Vehicle {v.vehicle_imei}] updated fuel level: {v.fuel_level}")
                     except Exception as e:
                         logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse fuel level {raw_fuel!r}: {e}")
                         # оставляем предыдущий уровень топлива
-
-                # 2) Если это электрокар или просто пришёл сенсор заряда — используем его как fuel_level
-                if not fuel_updated:
-                    battery_keys = [
-                        "Заряд батареи (can36)",
-                        "Заряд батареи",
-                        "battery_charge",
-                    ]
-                    raw_batt = None
-                    for key in battery_keys:
-                        raw_batt = extract_from_items(regs, key)
-                        if raw_batt and raw_batt.lower() not in ["данных нет", "нет данных", ""]:
-                            break
-                    if raw_batt and raw_batt.lower() not in ["данных нет", "нет данных", ""]:
-                        try:
-                            v.fuel_level = parse_numeric(raw_batt)
-                            fuel_updated = True
-                            logger.debug(f"[Vehicle {v.vehicle_imei}] updated battery charge as fuel_level: {v.fuel_level}")
-                        except Exception as e:
-                            logger.error(f"[Vehicle {v.vehicle_imei}] failed to parse battery charge {raw_batt!r}: {e}")
-
-                # 3) Если ничего не обновили — оставляем предыдущее значение без изменений
-                if not fuel_updated and v.is_engine_on:
-                    logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel/battery data available")
+                elif v.is_engine_on:
+                    # Если двигатель работает, но данных о топливе нет, логируем это
+                    logger.debug(f"[Vehicle {v.vehicle_imei}] engine is on but no fuel data available")
 
                 # — Багажник —
                 trunk_val = extract_first_match(regs, ["Багажник (can35)", "Багажник (can38)"])
@@ -242,24 +217,25 @@ async def update_vehicles():
                 fl_lock = extract_first_match(regs, ["ПЛ Замок (can45)", "ПЛ Замок", "front left lock"])
                 rl_lock = extract_first_match(regs, ["ЗЛ Замок (can47)", "ЗЛ Замок", "rear left lock"])
                 rr_lock = extract_first_match(regs, ["ЗП Замок (can49)", "ЗП Замок", "rear right lock"])
-                v.front_right_door_locked = bool(fr_lock and fr_lock.lower() == "закрыт") if fr_lock else True
-                v.front_left_door_locked = bool(fl_lock and fl_lock.lower() == "закрыт") if fl_lock else True
-                v.rear_left_door_locked = bool(rl_lock and rl_lock.lower() == "закрыт") if rl_lock else True
-                v.rear_right_door_locked = bool(rr_lock and rr_lock.lower() == "закрыт") if rr_lock else True
+                v.front_right_door_locked = bool(fr_lock and fr_lock.lower() == "закрыт")
+                v.front_left_door_locked = bool(fl_lock and fl_lock.lower() == "закрыт")
+                v.rear_left_door_locked = bool(rl_lock and rl_lock.lower() == "закрыт")
+                v.rear_right_door_locked = bool(rr_lock and rr_lock.lower() == "закрыт")
 
                 # — Центральные замки —
                 central_locks = extract_first_match(regs, ["Замки (can40)", "Замки (центральный)", "Замки"])
-                v.central_locks_locked = bool(central_locks and central_locks.lower().startswith("закрыт")) if central_locks else True
+                v.central_locks_locked = bool(central_locks and central_locks.lower().startswith("закрыт"))
 
                 # — Стёкла —
                 fl_win = extract_first_match(regs, ["ПЛ Стекло (can50)", "ПЛ Стекло", "front left window"])
                 fr_win = extract_first_match(regs, ["ПП Стекло (can51)", "ПП Стекло", "front right window"])
                 rl_win = extract_first_match(regs, ["ЗЛ Стекло (can52)", "ЗЛ Стекло", "rear left window"])
                 rr_win = extract_first_match(regs, ["ЗП Стекло (can53)", "ЗП Стекло", "rear right window"])
-                v.front_left_window_closed = bool(fl_win and fl_win.lower() == "закрыто") if fl_win else True
-                v.front_right_window_closed = bool(fr_win and fr_win.lower() == "закрыто") if fr_win else True
-                v.rear_left_window_closed = bool(rl_win and rl_win.lower() == "закрыто") if rl_win else True
-                v.rear_right_window_closed = bool(rr_win and rr_win.lower() == "закрыто") if rr_win else True
+                # Если данных по стеклу нет, считаем закрытым (default True)
+                v.front_left_window_closed = True if not fl_win else (fl_win.lower() == "закрыто")
+                v.front_right_window_closed = True if not fr_win else (fr_win.lower() == "закрыто")
+                v.rear_left_window_closed = True if not rl_win else (rl_win.lower() == "закрыто")
+                v.rear_right_window_closed = True if not rr_win else (rr_win.lower() == "закрыто")
 
                 # — Создаём уведомление по данным машины —
                 notifications.append(asyncio.create_task(

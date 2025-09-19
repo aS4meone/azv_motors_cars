@@ -256,17 +256,17 @@ async def update_vehicles():
                     v.rear_left_door_locked = bool(rl_lock and rl_lock.lower() != "открыт")
                     v.rear_right_door_locked = bool(rr_lock and rr_lock.lower() != "открыт")
                 else:
-                    # Формат UnregisteredSensors: CanSafetyFlags_* = "True"/"False"
-                    # False = замок заблокирован, True = замок открыт
-                    fr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_passangerdoor"])  # передняя правая
-                    fl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_driverdoor"])     # передняя левая
-                    rl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_backdoor"])       # задняя левая
-                    rr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_frontdoor"])      # задняя правая
-                    
-                    v.front_right_door_locked = fr_lock_unreg.lower() == "false" if fr_lock_unreg else True
-                    v.front_left_door_locked = fl_lock_unreg.lower() == "false" if fl_lock_unreg else True
-                    v.rear_left_door_locked = rl_lock_unreg.lower() == "false" if rl_lock_unreg else True
-                    v.rear_right_door_locked = rr_lock_unreg.lower() == "false" if rr_lock_unreg else True
+                     # Формат UnregisteredSensors: CanSafetyFlags_* = "True"/"False"
+                     # True = замок заблокирован, False = замок открыт
+                     fr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_passangerdoor"])  # передняя правая
+                     fl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_driverdoor"])     # передняя левая
+                     rl_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_backdoor"])       # задняя левая
+                     rr_lock_unreg = extract_first_match(unregs, ["CanSafetyFlags_frontdoor"])      # задняя правая
+                     
+                     v.front_right_door_locked = fr_lock_unreg.lower() == "true" if fr_lock_unreg else True
+                     v.front_left_door_locked = fl_lock_unreg.lower() == "true" if fl_lock_unreg else True
+                     v.rear_left_door_locked = rl_lock_unreg.lower() == "true" if rl_lock_unreg else True
+                     v.rear_right_door_locked = rr_lock_unreg.lower() == "true" if rr_lock_unreg else True
 
                 # — Центральные замки —
                 # Сначала ищем в RegistredSensors (для MB CLA45s, Hongqi e-qm5)
@@ -274,13 +274,13 @@ async def update_vehicles():
                 if central_locks:
                     v.central_locks_locked = bool(central_locks.lower().startswith("закрыт"))
                 else:
-                    # Если не найдено в RegistredSensors, ищем в UnregisteredSensors (для Haval F7x)
-                    central_locks_unreg = extract_first_match(unregs, ["CanSafetyFlags_lock"])
-                    if central_locks_unreg:
-                        # CanSafetyFlags_lock: "False" = замки заблокированы, "True" = замки открыты
-                        v.central_locks_locked = central_locks_unreg.lower() == "false"
-                    else:
-                        v.central_locks_locked = True
+                     # Если не найдено в RegistredSensors, ищем в UnregisteredSensors (для Haval F7x)
+                     central_locks_unreg = extract_first_match(unregs, ["CanSafetyFlags_lock"])
+                     if central_locks_unreg:
+                         # CanSafetyFlags_lock: "True" = замки заблокированы, "False" = замки открыты
+                         v.central_locks_locked = central_locks_unreg.lower() == "true"
+                     else:
+                         v.central_locks_locked = True
 
                 # — Стёкла —
                 fl_win = extract_first_match(regs, ["ПЛ Стекло (can50)", "ПЛ Стекло", "front left window"])

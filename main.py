@@ -201,6 +201,10 @@ async def update_vehicles():
                     # False = ручник включен, True = ручник выключен
                     handbrake_unreg = extract_first_match(unregs, ["CanSafetyFlags_handbrake"])
                     v.is_handbrake_on = handbrake_unreg.lower() == "false" if handbrake_unreg else True
+                
+                # — Логика безопасности: если двигатель выключен, ручник считается включенным —
+                if not v.is_engine_on:
+                    v.is_handbrake_on = True
 
                 # — Фары — (учтём «Фары» как общий признак и «Ближний свет»)
                 lights_val = extract_first_match(regs, [

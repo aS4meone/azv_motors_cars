@@ -343,11 +343,11 @@ def ensure_initial_vehicles():
     db = SessionLocal()
     try:
         defaults = [
-            {"vehicle_id": 800212421, "vehicle_imei": "869132074567851", "name": "MB CLA45s",
+            {"vehicle_id": 800212421, "vehicle_imei": "860803068143045", "name": "MB CLA45s",
              "plate_number": "666AZV02"},
             {"vehicle_id": 800153076, "vehicle_imei": "866011056063951", "name": "Haval F7x",
              "plate_number": "422ABK02"},
-            {"vehicle_id": 800283232, "vehicle_imei": "869132074464026", "name": "Hongqi e-qm5",
+            {"vehicle_id": 800283232, "vehicle_imei": "860803068139548", "name": "Hongqi e-qm5",
              "plate_number": "890AVB09"},
         ]
         for d in defaults:
